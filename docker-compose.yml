@@ -3,10 +3,10 @@ services:
     image: mysql:8.0
     container_name: lifelog-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MYSQL_DATABASE: lifelog
-      MYSQL_USER: lifelog
-      MYSQL_PASSWORD: lifelog
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
     ports:
       - "3306:3306"
     volumes:
