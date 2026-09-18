@@ -1,0 +1,2 @@
+rootProject.name = 'lifelog-backend'
+include 'api', 'domain', 'infrastructure'
