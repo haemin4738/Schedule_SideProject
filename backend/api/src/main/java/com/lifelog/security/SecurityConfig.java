@@ -18,7 +18,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtTokenProvider tokenProvider;
-    private final UserDetailsServiceImpl userDetailsService;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -28,16 +27,13 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/v1/auth/**").permitAll()
                 .requestMatchers(
-                    "/swagger-ui.html",
-                    "/swagger-ui/**",
-                    "/api-docs",
-                    "/api-docs/**",
-                    "/v3/api-docs",
-                    "/v3/api-docs/**"
+                    "/swagger-ui.html", "/swagger-ui/**",
+                    "/api-docs", "/api-docs/**",
+                    "/v3/api-docs", "/v3/api-docs/**"
                 ).permitAll()
                 .anyRequest().authenticated()
             )
-            .addFilterBefore(new JwtAuthenticationFilter(tokenProvider, userDetailsService),
+            .addFilterBefore(new JwtAuthenticationFilter(tokenProvider),
                              UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
