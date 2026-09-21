@@ -28,9 +28,13 @@ cat > ~/.claude/settings.json << 'EOF'
   "hooks": {
     "Stop": [
       {
-        "type": "command",
-        "command": "node /home/vscode/.claude/hooks/discord-notify.js",
-        "async": true
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /home/vscode/.claude/hooks/discord-notify.js",
+            "async": true
+          }
+        ]
       }
     ]
   }
