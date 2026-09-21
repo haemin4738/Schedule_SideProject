@@ -9,18 +9,9 @@ if [ -d "$NVM_NODE_BIN" ]; then
   echo "export PATH=\"$NVM_NODE_BIN:\$PATH\"" >> ~/.bashrc
 fi
 
-# 컨테이너 전용 .claude 디렉토리 구성
-mkdir -p ~/.claude
-
-# 로그인 인증 파일 (컨테이너 재시작 후에도 로그인 유지)
-ln -sf ~/.claude-host/.credentials.json ~/.claude/.credentials.json
-
-# 훅 스크립트 (호스트와 공유)
-ln -sf ~/.claude-host/hooks ~/.claude/hooks
-
-# 환경변수 (Discord 토큰 등, 호스트와 공유)
+# 호스트 settings.local.json 복사 (Discord 토큰 등 환경변수)
 [ -f ~/.claude-host/settings.local.json ] && \
-  ln -sf ~/.claude-host/settings.local.json ~/.claude/settings.local.json
+  cp ~/.claude-host/settings.local.json ~/.claude/settings.local.json || true
 
 # 컨테이너 전용 settings.json (Linux 경로 사용)
 cat > ~/.claude/settings.json << 'EOF'

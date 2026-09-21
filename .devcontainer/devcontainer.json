@@ -23,6 +23,8 @@
   "remoteUser": "vscode",
   "containerUser": "vscode",
   "mounts": [
+    "source=lifelog-claude,target=/home/vscode/.claude,type=volume",
+    "source=${localEnv:USERPROFILE}/.claude/hooks,target=/home/vscode/.claude/hooks,type=bind",
     "source=${localEnv:USERPROFILE}/.claude,target=/home/vscode/.claude-host,type=bind"
   ],
   "remoteEnv": {
