@@ -4,6 +4,11 @@ set -e
 # Claude Code 설치
 npm install -g @anthropic-ai/claude-code
 
+# nvm node bin을 PATH에 등록
+NODE_BIN=$(npm root -g | sed 's|/lib/node_modules||')/bin
+echo "export PATH=\"$NODE_BIN:\$PATH\"" >> ~/.bashrc
+echo "export PATH=\"$NODE_BIN:\$PATH\"" >> ~/.zshrc 2>/dev/null || true
+
 # 승인 없이 자율 실행 설정 (devcontainer 안은 격리되어 안전)
 mkdir -p ~/.claude
 cat > ~/.claude/settings.json << 'EOF'
