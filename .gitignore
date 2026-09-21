@@ -1,6 +1,7 @@
 # Gradle
 .gradle/
 build/
+bin/
 !gradle/wrapper/gradle-wrapper.jar
 
 # IntelliJ
@@ -11,6 +12,8 @@ out/
 
 # Spring Boot
 backend/api/src/main/resources/application-local.yml
+.env
+.env.*
 *.env
 
 # OS
@@ -20,6 +23,9 @@ Thumbs.db
 # Node (frontend)
 node_modules/
 dist/
+
+# Claude Code (local only)
+.claude/
 
 # Flutter
 mobile/.dart_tool/
