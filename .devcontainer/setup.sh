@@ -9,6 +9,9 @@ if [ -d "$NVM_NODE_BIN" ]; then
   echo "export PATH=\"$NVM_NODE_BIN:\$PATH\"" >> ~/.bashrc
 fi
 
+# ~/.claude volume 소유권 vscode로 변경 (named volume은 root 소유로 생성됨)
+sudo chown -R vscode:vscode ~/.claude
+
 # 호스트 settings.local.json 복사 (Discord 토큰 등 환경변수)
 [ -f ~/.claude-host/settings.local.json ] && \
   cp ~/.claude-host/settings.local.json ~/.claude/settings.local.json || true
