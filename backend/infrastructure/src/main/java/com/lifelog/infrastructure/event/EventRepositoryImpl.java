@@ -8,6 +8,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -24,5 +25,10 @@ public class EventRepositoryImpl implements EventRepository {
     public Page<Event> findByUserIdAndDateRange(Long userId, LocalDateTime from,
                                                 LocalDateTime to, Pageable pageable) {
         return jpa.findByUserIdAndDateRange(userId, from, to, pageable);
+    }
+
+    @Override
+    public List<Event> findAllByUserIdAndDateRange(Long userId, LocalDateTime from, LocalDateTime to) {
+        return jpa.findAllByUserIdAndDateRange(userId, from, to);
     }
 }

@@ -40,6 +40,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
             return bearer.substring(7);
         }
-        return null;
+        // SSE: EventSource can't set custom headers, so fall back to query param
+        return request.getParameter("token");
     }
 }
