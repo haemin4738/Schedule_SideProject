@@ -1,6 +1,6 @@
 import { getEvents } from '@/api/events'
 import dayjs from 'dayjs'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Calendar, dayjsLocalizer } from 'react-big-calendar'
 
 const localizer = dayjsLocalizer(dayjs)
@@ -8,7 +8,7 @@ const localizer = dayjsLocalizer(dayjs)
 export default function CalendarPage() {
   const [events, setEvents] = useState<{ title: string; start: Date; end: Date }[]>([])
 
-  useEffect(() => {
+  const loadEvents = useCallback(() => {
     getEvents().then(({ data }) => {
       setEvents(
         data.data.map((e) => ({
@@ -19,6 +19,18 @@ export default function CalendarPage() {
       )
     })
   }, [])
+
+  useEffect(() => {
+    loadEvents()
+  }, [loadEvents])
+
+  useEffect(() => {
+    const token = localStorage.getItem('accessToken')
+    if (!token) return
+    const es = new EventSource(`/api/v1/sse/events?token=${token}`)
+    es.addEventListener('REFRESH', loadEvents)
+    return () => es.close()
+  }, [loadEvents])
 
   return (
     <div className="h-screen p-4">

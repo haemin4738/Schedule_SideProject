@@ -40,6 +40,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (StringUtils.hasText(bearer) && bearer.startsWith("Bearer ")) {
             return bearer.substring(7);
         }
+        // SSE: EventSource can't set custom headers; restrict fallback to SSE endpoint only
+        if ("/api/v1/sse/events".equals(request.getServletPath())) {
+            return request.getParameter("token");
+        }
         return null;
     }
 }
