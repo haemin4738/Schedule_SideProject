@@ -29,7 +29,6 @@ export default function CalendarPage() {
     if (!token) return
     const es = new EventSource(`/api/v1/sse/events?token=${token}`)
     es.addEventListener('REFRESH', loadEvents)
-    es.onerror = () => es.close()
     return () => es.close()
   }, [loadEvents])
 

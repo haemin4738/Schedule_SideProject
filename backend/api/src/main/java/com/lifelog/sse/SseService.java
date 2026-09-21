@@ -14,10 +14,12 @@ public class SseService {
 
     public SseEmitter subscribe(Long userId) {
         SseEmitter emitter = new SseEmitter(30 * 60 * 1000L);
-        emitters.put(userId, emitter);
-        emitter.onCompletion(() -> emitters.remove(userId));
-        emitter.onTimeout(() -> emitters.remove(userId));
-        emitter.onError(e -> emitters.remove(userId));
+        SseEmitter old = emitters.put(userId, emitter);
+        if (old != null) old.complete();
+        // two-arg remove: only removes if value still matches this emitter (prevents race with new subscriber)
+        emitter.onCompletion(() -> emitters.remove(userId, emitter));
+        emitter.onTimeout(() -> emitters.remove(userId, emitter));
+        emitter.onError(e -> emitters.remove(userId, emitter));
         return emitter;
     }
 

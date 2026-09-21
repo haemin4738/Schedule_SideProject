@@ -17,7 +17,7 @@ public class EventCacheService {
 
     private final EventRepository eventRepository;
 
-    @Cacheable(value = "events", key = "#userId + ':' + #from + ':' + #to")
+    @Cacheable(value = "events", key = "{ #userId, #from, #to }")
     @Transactional(readOnly = true)
     public List<EventSummary> findByUserAndRange(Long userId, LocalDateTime from, LocalDateTime to) {
         return eventRepository.findAllByUserIdAndDateRange(userId, from, to)

@@ -45,7 +45,7 @@ public class EventService {
         List<EventSummary> all = eventCacheService.findByUserAndRange(userId, from, to);
         int start = (int) pageable.getOffset();
         int end = Math.min(start + pageable.getPageSize(), all.size());
-        List<EventSummary> slice = start > all.size() ? List.of() : all.subList(start, end);
+        List<EventSummary> slice = start >= all.size() ? List.of() : all.subList(start, end);
         return new PageImpl<>(slice, pageable, all.size());
     }
 
