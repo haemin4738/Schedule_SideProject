@@ -1,0 +1,33 @@
+{
+  "name": "Lifelog Dev",
+  "image": "mcr.microsoft.com/devcontainers/java:21",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "moby": false
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "forwardPorts": [8080, 5173, 3306, 6379],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "vmware.vscode-spring-boot",
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  },
+  "remoteUser": "vscode",
+  "containerUser": "vscode",
+  "mounts": [
+    "source=${localEnv:USERPROFILE}/.claude/hooks,target=/home/vscode/.claude/hooks,type=bind"
+  ],
+  "remoteEnv": {
+    "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
+    "DISCORD_BOT_TOKEN": "${localEnv:DISCORD_BOT_TOKEN}",
+    "DISCORD_APPROVAL_WORKER_URL": "${localEnv:DISCORD_APPROVAL_WORKER_URL}",
+    "DEVCONTAINER": "true"
+  }
+}
