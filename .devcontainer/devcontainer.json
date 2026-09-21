@@ -19,7 +19,7 @@
       ]
     }
   },
-  "runArgs": ["--name", "DevAgent"],
+  "runArgs": ["--name", "DevAgentContainer"],
   "remoteUser": "vscode",
   "containerUser": "vscode",
   "mounts": [

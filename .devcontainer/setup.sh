@@ -1,15 +1,15 @@
 #!/bin/bash
-set -e
 
 # Claude Code 설치
-npm install -g @anthropic-ai/claude-code
+npm install -g @anthropic-ai/claude-code || echo "⚠️ Claude Code 설치 실패"
 
-# nvm node bin을 PATH에 등록
-NODE_BIN=$(npm root -g | sed 's|/lib/node_modules||')/bin
-echo "export PATH=\"$NODE_BIN:\$PATH\"" >> ~/.bashrc
-echo "export PATH=\"$NODE_BIN:\$PATH\"" >> ~/.zshrc 2>/dev/null || true
+# nvm node bin PATH 등록 (고정 경로)
+NVM_NODE_BIN="/usr/local/share/nvm/versions/node/v20.20.2/bin"
+if [ -d "$NVM_NODE_BIN" ]; then
+  echo "export PATH=\"$NVM_NODE_BIN:\$PATH\"" >> ~/.bashrc
+fi
 
-# 승인 없이 자율 실행 설정 (devcontainer 안은 격리되어 안전)
+# 승인 없이 자율 실행 설정
 mkdir -p ~/.claude
 cat > ~/.claude/settings.json << 'EOF'
 {
