@@ -9,16 +9,6 @@ if [ -d "$NVM_NODE_BIN" ]; then
   echo "export PATH=\"$NVM_NODE_BIN:\$PATH\"" >> ~/.bashrc
 fi
 
-# 승인 없이 자율 실행 설정
-mkdir -p ~/.claude
-cat > ~/.claude/settings.json << 'EOF'
-{
-  "autoApproveTools": [
-    "Read", "Write", "Edit", "Bash", "Glob", "Grep"
-  ]
-}
-EOF
-
 # frontend 의존성 설치
 if [ -f "frontend/package.json" ]; then
   echo "📦 frontend 패키지 설치 중..."
