@@ -19,6 +19,7 @@ sudo chown -R vscode:vscode ~/.claude
 # 컨테이너 전용 settings.json (Linux 경로 사용)
 cat > ~/.claude/settings.json << 'EOF'
 {
+  "skipDangerousModePermissionPrompt": true,
   "hooks": {
     "Stop": [
       {
