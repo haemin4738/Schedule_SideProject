@@ -17,7 +17,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final _dio = createDio();
 
   Future<void> _login() async {
-    final res = await _dio.post('/api/auth/login', data: {
+    final res = await _dio.post('/api/v1/auth/login', data: {
       'email': _emailCtrl.text,
       'password': _pwCtrl.text,
     });

@@ -18,16 +18,16 @@ export interface CreateEventRequest {
 }
 
 export const getEvents = (params?: { page?: number; size?: number }) =>
-  client.get<{ success: boolean; data: Event[]; meta: unknown }>('/api/events', { params })
+  client.get<{ success: boolean; data: Event[]; meta: unknown }>('/api/v1/events', { params })
 
 export const getEvent = (id: number) =>
-  client.get<{ success: boolean; data: Event }>(`/api/events/${id}`)
+  client.get<{ success: boolean; data: Event }>(`/api/v1/events/${id}`)
 
 export const createEvent = (body: CreateEventRequest) =>
-  client.post<{ success: boolean; data: Event }>('/api/events', body)
+  client.post<{ success: boolean; data: Event }>('/api/v1/events', body)
 
 export const updateEvent = (id: number, body: Partial<CreateEventRequest>) =>
-  client.put<{ success: boolean; data: Event }>(`/api/events/${id}`, body)
+  client.put<{ success: boolean; data: Event }>(`/api/v1/events/${id}`, body)
 
 export const deleteEvent = (id: number) =>
-  client.delete(`/api/events/${id}`)
+  client.delete(`/api/v1/events/${id}`)
