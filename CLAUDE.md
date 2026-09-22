@@ -110,8 +110,8 @@ cp .env.example .env
 
 ## 도메인 구조
 
-- `events` — 코어 (Table Per Type 기반)
-- `job_applications` — Phase 3 확장
+- `events` — 코어
+- `job_applications` — Phase 3 확장, `events`와 독립된 엔티티/테이블 (상속·FK 연결 없음, 디렉터 검토 결과 JOINED 상속은 이 프로젝트 규모에 부적합하다고 판단)
 - `expenses` — Phase 4 확장
 
 ## Phase 순서
