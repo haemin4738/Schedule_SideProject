@@ -19,7 +19,7 @@ Dio createDio() {
         if (refreshToken == null) return handler.next(error);
         try {
           final res = await Dio(BaseOptions(baseUrl: _baseUrl)).post(
-            '/api/auth/refresh',
+            '/api/v1/auth/refresh',
             data: {'refreshToken': refreshToken},
           );
           final newToken = res.data['data']['accessToken'] as String;

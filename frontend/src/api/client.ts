@@ -21,7 +21,7 @@ client.interceptors.response.use(
       if (!refreshToken) return Promise.reject(error)
 
       const { data } = await axios.post(
-        `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'}/api/auth/refresh`,
+        `${import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'}/api/v1/auth/refresh`,
         { refreshToken },
       )
       localStorage.setItem('accessToken', data.data.accessToken)
