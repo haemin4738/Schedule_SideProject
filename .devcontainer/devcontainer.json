@@ -8,6 +8,7 @@
     }
   },
   "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "bash .devcontainer/connect-network.sh",
   "forwardPorts": [8080, 5173, 3306, 6379],
   "customizations": {
     "vscode": {
