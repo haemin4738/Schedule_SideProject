@@ -3,9 +3,9 @@
 # Claude Code 설치
 npm install -g @anthropic-ai/claude-code || echo "⚠️ Claude Code 설치 실패"
 
-# nvm node bin PATH 등록 (고정 경로)
-NVM_NODE_BIN="/usr/local/share/nvm/versions/node/v20.20.2/bin"
-if [ -d "$NVM_NODE_BIN" ]; then
+# nvm node bin PATH 등록 (동적 경로)
+NVM_NODE_BIN=$(ls -d /usr/local/share/nvm/versions/node/*/bin 2>/dev/null | sort -V | tail -1)
+if [ -n "$NVM_NODE_BIN" ]; then
   echo "export PATH=\"$NVM_NODE_BIN:\$PATH\"" >> ~/.bashrc
 fi
 
@@ -20,8 +20,20 @@ sudo chown -R vscode:vscode ~/.claude
 cat > ~/.claude/settings.json << 'EOF'
 {
   "skipDangerousModePermissionPrompt": true,
+  "permissions": {
+    "deny": ["Read(.env)", "Read(.env.*)"]
+  },
   "hooks": {
     "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /home/vscode/.claude/hooks/check-task-summary.js",
+            "asyncRewake": true
+          }
+        ]
+      },
       {
         "hooks": [
           {
@@ -35,6 +47,13 @@ cat > ~/.claude/settings.json << 'EOF'
   }
 }
 EOF
+
+# git 사용자 설정
+git config --global user.name "haemin4738"
+git config --global user.email "leeheamin12@gmail.com"
+
+# git 자격증명 — GITHUB_TOKEN으로 자동 인증 (자율 실행 시 프롬프트 방지)
+git config --global credential.helper '!f() { echo username=x-token; echo password=$GITHUB_TOKEN; }; f'
 
 # frontend 의존성 설치
 if [ -f "frontend/package.json" ]; then
