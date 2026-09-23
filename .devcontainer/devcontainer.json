@@ -5,7 +5,8 @@
     "ghcr.io/devcontainers/features/node:1": { "version": "20" },
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
       "moby": false
-    }
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   "postCreateCommand": "bash .devcontainer/setup.sh",
   "postStartCommand": "bash .devcontainer/connect-network.sh",
@@ -32,6 +33,7 @@
     "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
     "DISCORD_BOT_TOKEN": "${localEnv:DISCORD_BOT_TOKEN}",
     "DISCORD_APPROVAL_WORKER_URL": "${localEnv:DISCORD_APPROVAL_WORKER_URL}",
+    "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}",
     "DEVCONTAINER": "true"
   }
 }
