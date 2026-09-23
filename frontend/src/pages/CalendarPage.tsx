@@ -2,6 +2,7 @@ import { getEvents } from '@/api/events'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { Calendar, dayjsLocalizer } from 'react-big-calendar'
+import { Link } from 'react-router-dom'
 
 const localizer = dayjsLocalizer(dayjs)
 
@@ -33,8 +34,15 @@ export default function CalendarPage() {
   }, [loadEvents])
 
   return (
-    <div className="h-screen p-4">
-      <Calendar localizer={localizer} events={events} style={{ height: '100%' }} />
+    <div className="flex h-screen flex-col p-4">
+      <div className="mb-2 flex justify-end">
+        <Link to="/job-applications" className="text-sm text-blue-500 hover:underline">
+          구직활동
+        </Link>
+      </div>
+      <div className="flex-1">
+        <Calendar localizer={localizer} events={events} style={{ height: '100%' }} />
+      </div>
     </div>
   )
 }

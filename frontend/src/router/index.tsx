@@ -1,6 +1,7 @@
 import { useAuthStore } from '@/store/authStore'
 import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom'
 import CalendarPage from '@/pages/CalendarPage'
+import JobApplicationsPage from '@/pages/JobApplicationsPage'
 import LoginPage from '@/pages/LoginPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -18,6 +19,14 @@ export default function AppRouter() {
           element={
             <PrivateRoute>
               <CalendarPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/job-applications"
+          element={
+            <PrivateRoute>
+              <JobApplicationsPage />
             </PrivateRoute>
           }
         />

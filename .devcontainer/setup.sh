@@ -42,6 +42,20 @@ if [ -f "frontend/package.json" ]; then
   cd frontend && npm install && cd ..
 fi
 
+# Flutter SDK 설치 (mobile 코드 flutter analyze/test 실행용)
+if [ ! -d /usr/local/flutter ]; then
+  echo "📱 Flutter SDK 설치 중..."
+  sudo git clone --depth 1 -b stable https://github.com/flutter/flutter.git /usr/local/flutter
+  sudo chown -R "$(whoami)":"$(whoami)" /usr/local/flutter
+fi
+echo 'export PATH="/usr/local/flutter/bin:$PATH"' | sudo tee /etc/profile.d/flutter.sh >/dev/null
+export PATH="/usr/local/flutter/bin:$PATH"
+flutter config --no-analytics >/dev/null 2>&1 || true
+if [ -f "mobile/pubspec.yaml" ]; then
+  echo "📱 mobile 패키지 설치 중..."
+  cd mobile && flutter pub get && cd ..
+fi
+
 echo "✅ 세팅 완료!"
 echo ""
 echo "▶ 인프라 시작:  docker compose up -d"

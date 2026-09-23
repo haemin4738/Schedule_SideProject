@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mobile/features/auth/provider/auth_provider.dart';
 import 'package:mobile/features/calendar/provider/events_provider.dart';
 
@@ -38,6 +39,11 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
       appBar: AppBar(
         title: const Text('캘린더'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.work_outline),
+            tooltip: '구직활동',
+            onPressed: () => context.push('/job-applications'),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => ref.read(eventsProvider.notifier).refresh(),
