@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:mobile/core/network/dio_client.dart';
 
 class AuthState {
   final String? accessToken;
@@ -10,6 +11,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final _storage = const FlutterSecureStorage();
 
   AuthNotifier() : super(const AuthState()) {
+    // refresh 실패로 세션이 만료되면 로그인 화면으로 돌아가도록 상태를 비운다 (토큰은 dio_client가 삭제)
+    onSessionExpired = () => state = const AuthState();
     _init();
   }
 

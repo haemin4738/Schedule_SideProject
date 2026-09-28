@@ -76,12 +76,12 @@ class EventControllerTest {
     }
 
     @Test
-    void list_withoutAuthentication_returnsErrorStatus() throws Exception {
-        // SecurityConfig는 anonymous 인증을 허용하므로 authenticated() 규칙 위반 시
-        // AccessDeniedException(403)이 발생한다(401 커스텀 AuthenticationEntryPoint 미설정).
-        // 인증/보안 설정 변경은 사용자 승인이 필요한 항목이라 여기서는 현재 동작(403)을 그대로 검증한다.
+    void list_withoutAuthentication_returnsUnauthorized() throws Exception {
+        // 토큰 없음/만료 → 401 (클라이언트가 refresh 토큰 재발급을 시도하는 기준)
         mockMvc.perform(get("/api/v1/events"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("인증이 필요합니다."));
     }
 
     @Test

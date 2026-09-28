@@ -684,6 +684,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: |
+        access 토큰(15분). 토큰이 없거나 만료·위조되면 모든 인증 필요 API가 401
+        `{"success":false,"data":null,"error":"인증이 필요합니다."}` 을 반환한다.
+        401을 받으면 클라이언트는 /auth/refresh 로 재발급 후 재시도한다.
 
   schemas:
 
@@ -811,9 +815,11 @@ components:
           example: user@example.com
         password:
           type: string
-          minLength: 8
-          description: 8자 이상, UTF-8 인코딩 기준 72바이트 이하 (영문 72자, 한글 24자). 초과 시 400.
-          example: 'P@ssw0rd!'
+          minLength: 9
+          maxLength: 15
+          pattern: '^(?=.*[A-Za-z])(?=.*\d)(?=.*[!-/:-@\[-`{-~])[A-Za-z\d!-/:-@\[-`{-~]{9,15}$'
+          description: 영문, 숫자, 특수문자(ASCII)를 각각 1자 이상 포함한 9~15자. 그 외 문자(공백, 한글 등) 불가. 위반 시 400.
+          example: 'Passw0rd!'
         name:
           type: string
           example: 홍길동

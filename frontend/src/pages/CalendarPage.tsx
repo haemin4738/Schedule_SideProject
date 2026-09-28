@@ -1,4 +1,5 @@
 import { getEvents } from '@/api/events'
+import { useAuthStore } from '@/store/authStore'
 import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { Calendar, dayjsLocalizer } from 'react-big-calendar'
@@ -25,13 +26,15 @@ export default function CalendarPage() {
     loadEvents()
   }, [loadEvents])
 
+  // 토큰이 재발급되면 새 토큰으로 SSE를 다시 연결한다 (만료 토큰으로 재연결 반복 방지)
+  const accessToken = useAuthStore((state) => state.accessToken)
+
   useEffect(() => {
-    const token = localStorage.getItem('accessToken')
-    if (!token) return
-    const es = new EventSource(`/api/v1/sse/events?token=${token}`)
+    if (!accessToken) return
+    const es = new EventSource(`/api/v1/sse/events?token=${accessToken}`)
     es.addEventListener('REFRESH', loadEvents)
     return () => es.close()
-  }, [loadEvents])
+  }, [loadEvents, accessToken])
 
   return (
     <div className="flex h-screen flex-col p-4">

@@ -1,9 +1,8 @@
 package com.lifelog.auth.dto;
 
-import com.lifelog.common.validation.MaxUtf8Bytes;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Pattern;
 
 public record SignupRequest(
         @Email(message = "올바른 이메일 형식이 아닙니다.")
@@ -11,9 +10,9 @@ public record SignupRequest(
         String email,
 
         @NotBlank(message = "비밀번호는 필수입니다.")
-        @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.")
-        // CVE-2025-22228 수정으로 BCrypt encode()가 72바이트 초과 입력을 거부하므로 요청 단계에서 400으로 막는다
-        @MaxUtf8Bytes(value = 72, message = "비밀번호가 너무 깁니다. (영문 기준 72자, 한글 기준 24자 이하)")
+        // 특수문자 = ASCII 구두점 전체(!-/ :-@ [-` {-~). 영문/숫자/특수문자를 각각 1자 이상 포함한 9~15자. ASCII만 허용하므로 BCrypt 72바이트 한계 안에 든다
+        @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)(?=.*[!-/:-@\\[-`{-~])[A-Za-z\\d!-/:-@\\[-`{-~]{9,15}$",
+                message = "비밀번호는 영문, 숫자, 특수문자를 각각 1자 이상 포함한 9~15자여야 합니다.")
         String password,
 
         @NotBlank(message = "이름은 필수입니다.")

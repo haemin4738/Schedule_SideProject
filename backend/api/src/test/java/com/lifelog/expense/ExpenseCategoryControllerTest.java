@@ -62,9 +62,12 @@ class ExpenseCategoryControllerTest {
     }
 
     @Test
-    void list_withoutAuthentication_returnsForbidden() throws Exception {
-        // 현재 SecurityConfig는 401 EntryPoint 미설정 → 403 (JobApplicationControllerTest와 동일한 기존 동작)
-        mockMvc.perform(get(BASE)).andExpect(status().isForbidden());
+    void list_withoutAuthentication_returnsUnauthorized() throws Exception {
+        // 토큰 없음/만료 → 401 (클라이언트가 refresh 토큰 재발급을 시도하는 기준)
+        mockMvc.perform(get(BASE))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("인증이 필요합니다."));
     }
 
     @Test
