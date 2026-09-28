@@ -13,6 +13,10 @@ public class BusinessException extends RuntimeException {
         this.status = status;
     }
 
+    public static BusinessException badRequest(String message) {
+        return new BusinessException(message, HttpStatus.BAD_REQUEST);
+    }
+
     public static BusinessException notFound(String message) {
         return new BusinessException(message, HttpStatus.NOT_FOUND);
     }
