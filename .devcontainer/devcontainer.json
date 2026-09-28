@@ -34,6 +34,8 @@
     "DISCORD_BOT_TOKEN": "${localEnv:DISCORD_BOT_TOKEN}",
     "DISCORD_APPROVAL_WORKER_URL": "${localEnv:DISCORD_APPROVAL_WORKER_URL}",
     "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}",
-    "DEVCONTAINER": "true"
+    "DEVCONTAINER": "true",
+    "DB_HOST": "lifelog-mysql",
+    "REDIS_HOST": "lifelog-redis"
   }
 }
