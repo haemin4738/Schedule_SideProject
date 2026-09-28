@@ -40,4 +40,11 @@ class MaxUtf8BytesValidatorTest {
     void isValid_whenNull_returnsTrue() {
         assertThat(validatorOf(72).isValid(null, null)).isTrue();
     }
+
+    @Test
+    void isValid_whenEmojiCountedAsFourBytes_checksByteLength() {
+        // 이모지 1자 = UTF-8 4바이트 → 18자 = 72바이트, 19자 = 76바이트
+        assertThat(validatorOf(72).isValid("😀".repeat(18), null)).isTrue();
+        assertThat(validatorOf(72).isValid("😀".repeat(19), null)).isFalse();
+    }
 }

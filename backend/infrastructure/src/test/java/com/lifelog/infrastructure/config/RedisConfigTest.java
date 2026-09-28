@@ -1,6 +1,7 @@
 package com.lifelog.infrastructure.config;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.cache.interceptor.LoggingCacheErrorHandler;
 import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.data.redis.serializer.SerializationException;
 
@@ -47,5 +48,18 @@ class RedisConfigTest {
     @Test
     void cacheValueSerializer_whenNull_roundTripsAsNull() {
         assertThat(serializer.deserialize(serializer.serialize(null))).isNull();
+    }
+
+    @Test
+    void cacheValueSerializer_whenTypeNotAllowed_failsToDeserialize() {
+        // 허용 목록(com.lifelog.*, ArrayList, java.time.*) 밖 타입은 Redis에 기록돼 있어도 복원하지 않는다
+        byte[] bytes = "[\"java.util.HashMap\",{}]".getBytes();
+
+        assertThatThrownBy(() -> serializer.deserialize(bytes)).isInstanceOf(SerializationException.class);
+    }
+
+    @Test
+    void errorHandler_whenCalled_returnsLoggingHandlerSoCacheFailureFallsBackToDb() {
+        assertThat(new RedisConfig().errorHandler()).isInstanceOf(LoggingCacheErrorHandler.class);
     }
 }

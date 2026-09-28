@@ -812,6 +812,7 @@ components:
         password:
           type: string
           minLength: 8
+          description: 8자 이상, UTF-8 인코딩 기준 72바이트 이하 (영문 72자, 한글 24자). 초과 시 400.
           example: 'P@ssw0rd!'
         name:
           type: string
