@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:mobile/features/auth/presentation/login_page.dart';
 import 'package:mobile/features/calendar/presentation/calendar_page.dart';
 import 'package:mobile/features/auth/provider/auth_provider.dart';
+import 'package:mobile/features/expenses/presentation/expenses_page.dart';
 import 'package:mobile/features/jobapplications/presentation/job_applications_page.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -17,11 +18,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(path: '/login', builder: (_, __) => const LoginPage()),
-      GoRoute(path: '/', builder: (_, __) => const CalendarPage()),
+      GoRoute(path: '/login', builder: (_, _) => const LoginPage()),
+      GoRoute(path: '/', builder: (_, _) => const CalendarPage()),
       GoRoute(
         path: '/job-applications',
-        builder: (_, __) => const JobApplicationsPage(),
+        builder: (_, _) => const JobApplicationsPage(),
+      ),
+      GoRoute(
+        path: '/expenses',
+        builder: (_, _) => const ExpensesPage(),
       ),
     ],
   );

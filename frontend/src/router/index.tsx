@@ -1,6 +1,7 @@
 import { useAuthStore } from '@/store/authStore'
 import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom'
 import CalendarPage from '@/pages/CalendarPage'
+import ExpensesPage from '@/pages/ExpensesPage'
 import JobApplicationsPage from '@/pages/JobApplicationsPage'
 import LoginPage from '@/pages/LoginPage'
 
@@ -27,6 +28,14 @@ export default function AppRouter() {
           element={
             <PrivateRoute>
               <JobApplicationsPage />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/expenses"
+          element={
+            <PrivateRoute>
+              <ExpensesPage />
             </PrivateRoute>
           }
         />
