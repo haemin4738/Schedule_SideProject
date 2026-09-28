@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# 워크스페이스 루트 (안내 명령어를 현재 위치와 무관하게 쓰기 위해 절대경로 사용)
+WORKSPACE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
 # Claude Code 설치
 npm install -g @anthropic-ai/claude-code || echo "⚠️ Claude Code 설치 실패"
 
@@ -56,9 +59,9 @@ git config --global user.email "leeheamin12@gmail.com"
 git config --global credential.helper '!f() { echo username=x-token; echo password=$GITHUB_TOKEN; }; f'
 
 # frontend 의존성 설치
-if [ -f "frontend/package.json" ]; then
+if [ -f "$WORKSPACE_DIR/frontend/package.json" ]; then
   echo "📦 frontend 패키지 설치 중..."
-  cd frontend && npm install && cd ..
+  (cd "$WORKSPACE_DIR/frontend" && npm install) || echo "⚠️ frontend 패키지 설치 실패"
 fi
 
 # Flutter SDK 설치 (mobile 코드 flutter analyze/test 실행용)
@@ -70,13 +73,13 @@ fi
 echo 'export PATH="/usr/local/flutter/bin:$PATH"' | sudo tee /etc/profile.d/flutter.sh >/dev/null
 export PATH="/usr/local/flutter/bin:$PATH"
 flutter config --no-analytics >/dev/null 2>&1 || true
-if [ -f "mobile/pubspec.yaml" ]; then
+if [ -f "$WORKSPACE_DIR/mobile/pubspec.yaml" ]; then
   echo "📱 mobile 패키지 설치 중..."
-  cd mobile && flutter pub get && cd ..
+  (cd "$WORKSPACE_DIR/mobile" && flutter pub get) || echo "⚠️ mobile 패키지 설치 실패"
 fi
 
 echo "✅ 세팅 완료!"
 echo ""
-echo "▶ 인프라 시작:  docker compose up -d"
-echo "▶ 백엔드 실행:  cd backend && ./gradlew :api:bootRun --args='--spring.profiles.active=local'"
+echo "▶ 인프라 시작:  docker compose -f $WORKSPACE_DIR/docker-compose.yml up -d"
+echo "▶ 백엔드 실행:  cd $WORKSPACE_DIR/backend && ./gradlew :api:bootRun --args='--spring.profiles.active=local'"
 echo "▶ Claude 자율:  claude --dangerously-skip-permissions"
