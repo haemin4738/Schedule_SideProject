@@ -172,7 +172,13 @@ export default function ExpensesPage() {
 
   const reloadAfterChange = () => setReloadKey((k) => k + 1)
 
+  // 진행 중인 상세 조회 응답이 늦게 도착해도 수정 폼을 열지 않도록 무효화한다
+  const cancelPendingEdit = () => {
+    editRequestSeq.current++
+  }
+
   const moveMonth = (diff: number) => {
+    cancelPendingEdit()
     setMonth((m) => m.add(diff, 'month'))
     setPage(0)
     setActionError(null)
@@ -211,6 +217,8 @@ export default function ExpensesPage() {
 
   const closeCategoryManager = () => {
     setIsCategoryManagerOpen(false)
+    // 조회 실패 상태였다면 다시 시도할 수 있도록 카테고리도 다시 불러온다
+    void loadCategories()
     // 이름 변경이 목록/요약의 카테고리명에 반영되도록 재조회
     reloadAfterChange()
   }
@@ -307,7 +315,10 @@ export default function ExpensesPage() {
           </button>
           <button
             type="button"
-            onClick={() => setForm({ expense: null })}
+            onClick={() => {
+              cancelPendingEdit()
+              setForm({ expense: null })
+            }}
             className="rounded bg-blue-500 px-3 py-1 text-sm text-white hover:bg-blue-600"
           >
             내역 추가
@@ -317,7 +328,14 @@ export default function ExpensesPage() {
 
       {listError && <p className="mb-3 text-sm text-red-500">{listError}</p>}
       {actionError && <p className="mb-3 text-sm text-red-500">{actionError}</p>}
-      {categoriesError && <p className="mb-3 text-sm text-red-500">{categoriesError}</p>}
+      {categoriesError && (
+        <p className="mb-3 text-sm text-red-500">
+          <span>{categoriesError}</span>{' '}
+          <button type="button" onClick={() => void loadCategories()} className="underline">
+            다시 시도
+          </button>
+        </p>
+      )}
 
       <ExpenseListTable
         items={items}

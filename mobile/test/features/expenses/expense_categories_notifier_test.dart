@@ -131,4 +131,15 @@ void main() {
     expect(notifier.state.hasError, isTrue);
     notifier.dispose();
   });
+
+  test('fetch_재조회실패_기존목록을유지한채에러를표시한다', () async {
+    final notifier = await createLoaded();
+    handler = (_) => errorBody(500, '서버 오류');
+
+    await notifier.fetch();
+
+    expect(notifier.state.hasError, isTrue);
+    expect(names(notifier), ['식비', '급여']);
+    notifier.dispose();
+  });
 }

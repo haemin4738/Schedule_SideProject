@@ -52,7 +52,8 @@ class ExpenseCategoriesNotifier
           .toList());
     } catch (e, st) {
       if (!mounted || seq != _requestSeq) return;
-      state = AsyncValue.error(e, st);
+      // 재조회 실패 시 기존 목록을 버리지 않는다 (필터/관리 화면이 비지 않도록)
+      state = AsyncValue<List<ExpenseCategory>>.error(e, st).copyWithPrevious(state);
     }
   }
 

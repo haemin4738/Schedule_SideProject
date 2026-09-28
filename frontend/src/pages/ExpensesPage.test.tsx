@@ -295,6 +295,22 @@ describe('ExpensesPage', () => {
       expect(within(manager).queryByText('카테고리가 없습니다.')).not.toBeInTheDocument()
     })
 
+    it('loadCategories_whenRetryClickedAfterFailure_reloadsAndClearsError', async () => {
+      const user = userEvent.setup()
+      mockListResponse([])
+      const categoriesOk = mockedGetExpenseCategories.getMockImplementation()
+      mockedGetExpenseCategories.mockRejectedValueOnce(new Error('network error'))
+      renderPage()
+      expect(await screen.findByText('카테고리를 불러오지 못했습니다.')).toBeInTheDocument()
+      if (categoriesOk) mockedGetExpenseCategories.mockImplementation(categoriesOk)
+
+      await user.click(screen.getByRole('button', { name: '다시 시도' }))
+
+      await waitFor(() =>
+        expect(screen.queryByText('카테고리를 불러오지 못했습니다.')).not.toBeInTheDocument(),
+      )
+    })
+
     it('render_withCategorySummary_showsAmountCountAndRatio', async () => {
       mockListResponse([])
       mockSummaries({
@@ -766,6 +782,21 @@ describe('ExpensesPage', () => {
         )
       })
       expect(mockedUpdateExpense).toHaveBeenCalledTimes(1)
+    })
+
+    it('edit_whenCreateClickedBeforeDetailArrives_ignoresLateDetailResponse', async () => {
+      const user = userEvent.setup()
+      mockListResponse([lunch])
+      let resolveDetail: (value: unknown) => void = () => {}
+      mockedGetExpense.mockReturnValue(new Promise((resolve) => (resolveDetail = resolve)) as never)
+      renderPage()
+
+      await user.click(await screen.findByText('점심'))
+      await user.click(screen.getByRole('button', { name: '내역 추가' }))
+      resolveDetail({ data: { success: true, data: { ...lunch, memo: null, createdAt: '', updatedAt: '' } } })
+
+      await waitFor(() => expect(screen.getByRole('dialog', { name: '내역 추가' })).toBeInTheDocument())
+      expect(screen.queryByRole('dialog', { name: '내역 수정' })).not.toBeInTheDocument()
     })
 
     it('edit_whenDetailFetchFails_showsErrorAndDoesNotOpenForm', async () => {
