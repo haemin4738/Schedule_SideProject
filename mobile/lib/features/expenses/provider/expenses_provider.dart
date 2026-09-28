@@ -1,8 +1,11 @@
+import 'dart:math';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/core/network/dio_client.dart';
 import 'package:mobile/features/expenses/expense_type.dart';
+import 'package:mobile/features/expenses/provider/expense_categories_provider.dart';
 
 final _dateFormat = DateFormat('yyyy-MM-dd');
 
@@ -77,13 +80,14 @@ class ExpensesState {
 }
 
 class ExpensesNotifier extends StateNotifier<AsyncValue<ExpensesState>> {
-  ExpensesNotifier({DateTime? initialMonth})
+  ExpensesNotifier({DateTime? initialMonth, Dio? dio})
       : month = firstDayOfMonth(initialMonth ?? DateTime.now()),
+        _dio = dio ?? createDio(),
         super(const AsyncValue.loading()) {
     fetch();
   }
 
-  final _dio = createDio();
+  final Dio _dio;
 
   /// 선택 월의 1일.
   DateTime month;
@@ -94,6 +98,8 @@ class ExpensesNotifier extends StateNotifier<AsyncValue<ExpensesState>> {
   int _requestSeq = 0;
 
   Future<void> fetch({int page = 0, int size = 20}) async {
+    // 저장 중 화면을 벗어나 폐기된 뒤 refresh 가 호출될 수 있다
+    if (!mounted) return;
     final seq = ++_requestSeq;
     state = const AsyncValue.loading();
     try {
@@ -112,13 +118,21 @@ class ExpensesNotifier extends StateNotifier<AsyncValue<ExpensesState>> {
           .map((e) => ExpenseItem.fromJson(e as Map<String, dynamic>))
           .toList();
       final meta = res.data['meta'] as Map<String, dynamic>;
+      final totalPages = meta['totalPages'] as int;
+
+      // 마지막 페이지의 마지막 항목을 삭제하면 빈 페이지가 온다 → 존재하는 마지막 페이지로 이동
+      if (items.isEmpty && page > 0) {
+        final target = max(0, min(page - 1, totalPages - 1));
+        await fetch(page: target, size: size);
+        return;
+      }
 
       state = AsyncValue.data(ExpensesState(
         items: items,
         page: meta['page'] as int,
         size: meta['size'] as int,
         total: meta['total'] as int,
-        totalPages: meta['totalPages'] as int,
+        totalPages: totalPages,
       ));
     } catch (e, st) {
       if (!mounted || seq != _requestSeq) return;
@@ -141,6 +155,18 @@ class ExpensesNotifier extends StateNotifier<AsyncValue<ExpensesState>> {
     typeFilter = type;
     categoryIdFilter = categoryId;
     return fetch();
+  }
+
+  /// 카테고리 관리 화면에서 돌아온 뒤 호출한다. 선택된 카테고리 필터가 삭제됐으면
+  /// 필터를 해제하고 첫 페이지부터, 아니면(이름 변경 반영) 현재 페이지를 다시 조회한다.
+  Future<void> refreshAfterCategoryChange(List<ExpenseCategory>? categories) {
+    final selectedId = categoryIdFilter;
+    if (selectedId != null &&
+        categories != null &&
+        !categories.any((c) => c.id == selectedId)) {
+      return filter(type: typeFilter);
+    }
+    return refresh();
   }
 
   Future<ExpenseItem> getDetail(int id) async {
@@ -208,7 +234,10 @@ class ExpensesNotifier extends StateNotifier<AsyncValue<ExpensesState>> {
   }
 }
 
-final expensesProvider =
-    StateNotifierProvider<ExpensesNotifier, AsyncValue<ExpensesState>>(
+/// 화면 재진입 시 이번 달·필터 초기값으로 다시 시작하고, 로그아웃 후 이전 사용자 데이터가
+/// 남지 않도록 autoDispose. 내역 폼(bottom sheet)·카테고리 관리 화면은 메인 화면 위에 열리므로
+/// 그동안 메인이 계속 구독해 같은 인스턴스가 유지된다.
+final expensesProvider = StateNotifierProvider.autoDispose<ExpensesNotifier,
+    AsyncValue<ExpensesState>>(
   (_) => ExpensesNotifier(),
 );

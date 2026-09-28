@@ -30,6 +30,8 @@ interface Props {
   expense: ExpenseResponse | null
   defaultDate: string
   categories: ExpenseCategory[]
+  /** 카테고리 조회 실패 메시지. 있으면 저장을 막고 '카테고리 추가' 안내 대신 오류를 보여준다 */
+  categoriesError?: string | null
   onClose: () => void
   onSaved: () => void
   onManageCategories: () => void
@@ -42,6 +44,7 @@ export default function ExpenseFormModal({
   expense,
   defaultDate,
   categories,
+  categoriesError = null,
   onClose,
   onSaved,
   onManageCategories,
@@ -79,7 +82,7 @@ export default function ExpenseFormModal({
   register('type')
   const selectedType = useWatch({ control, name: 'type' })
   const typeCategories = categories.filter((c) => c.type === selectedType)
-  const noCategories = typeCategories.length === 0
+  const noCategories = !categoriesError && typeCategories.length === 0
 
   const changeType = (type: ExpenseType) => {
     if (type === selectedType) return
@@ -94,8 +97,9 @@ export default function ExpenseFormModal({
       categoryId: Number(values.categoryId),
       amount: Number(values.amount),
       transactionDate: values.transactionDate,
-      description: values.description || null,
-      memo: values.memo || null,
+      // description 은 앞뒤 공백 제거, memo 는 줄바꿈/들여쓰기를 보존해 원문 그대로 (공백만이면 null) — Flutter 와 동일
+      description: values.description.trim() || null,
+      memo: values.memo.trim() ? values.memo : null,
     }
     try {
       if (expense) {
@@ -140,7 +144,11 @@ export default function ExpenseFormModal({
 
         <div className="grid grid-cols-1 gap-3">
           <div>
-            {noCategories ? (
+            {categoriesError ? (
+              <p role="alert" className="rounded border border-red-200 p-3 text-sm text-red-500">
+                {categoriesError}
+              </p>
+            ) : noCategories ? (
               <div className="rounded border border-dashed p-3 text-sm text-gray-600">
                 <p>먼저 카테고리를 추가하세요.</p>
                 <button
@@ -232,7 +240,7 @@ export default function ExpenseFormModal({
           </button>
           <button
             type="submit"
-            disabled={isSubmitting || noCategories}
+            disabled={isSubmitting || noCategories || !!categoriesError}
             className="rounded bg-blue-500 px-4 py-2 text-sm text-white hover:bg-blue-600 disabled:opacity-50"
           >
             저장

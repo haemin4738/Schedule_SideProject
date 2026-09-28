@@ -14,15 +14,13 @@ import {
 } from '@/api/expenses'
 import { getApiErrorMessage } from '@/api/errorMessage'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
+import CategorySummarySection from '@/components/expenses/CategorySummarySection'
 import ExpenseFormModal from '@/components/expenses/ExpenseFormModal'
-import {
-  EXPENSE_TYPE_OPTIONS,
-  formatAmount,
-  formatSignedAmount,
-  type ExpenseType,
-} from '@/constants/expenseType'
+import ExpenseListTable from '@/components/expenses/ExpenseListTable'
+import ExpenseSummaryCards from '@/components/expenses/ExpenseSummaryCards'
+import { EXPENSE_TYPE_LABELS, EXPENSE_TYPE_OPTIONS, type ExpenseType } from '@/constants/expenseType'
 import dayjs, { type Dayjs } from 'dayjs'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 const PAGE_SIZE = 20
@@ -44,11 +42,18 @@ interface SummaryResult {
   error: string | null
 }
 
-// 실패해도 reject 하지 않는다 (카테고리가 없으면 폼이 '먼저 카테고리를 추가하세요' 안내를 보여준다)
-const fetchCategories = (): Promise<ExpenseCategory[]> =>
+type CategoriesResult = { ok: true; items: ExpenseCategory[] } | { ok: false; error: string }
+
+// 실패해도 reject 하지 않는다. 실패를 빈 목록으로 취급하면 '카테고리를 추가하세요' 안내가 잘못 보이므로 구분한다
+const fetchCategories = (): Promise<CategoriesResult> =>
   getExpenseCategories()
-    .then(({ data }) => data.data)
-    .catch(() => [])
+    .then(({ data }): CategoriesResult => ({ ok: true, items: data.data }))
+    .catch(
+      (err): CategoriesResult => ({
+        ok: false,
+        error: getApiErrorMessage(err, '카테고리를 불러오지 못했습니다.'),
+      }),
+    )
 
 export default function ExpensesPage() {
   const [month, setMonth] = useState<Dayjs>(() => dayjs().startOf('month'))
@@ -64,8 +69,11 @@ export default function ExpensesPage() {
   const [actionError, setActionError] = useState<string | null>(null)
 
   const [categories, setCategories] = useState<ExpenseCategory[]>([])
+  const [categoriesError, setCategoriesError] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(null)
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
+  // 행을 빠르게 연속 클릭했을 때 마지막 클릭의 상세 조회만 폼에 반영하기 위한 요청 순번
+  const editRequestSeq = useRef(0)
 
   const from = month.format(DATE_FORMAT)
   const to = month.endOf('month').format(DATE_FORMAT)
@@ -84,7 +92,13 @@ export default function ExpensesPage() {
       size: PAGE_SIZE,
     })
       .then(({ data }) => {
-        if (!ignore) setList({ key: listKey, items: data.data, meta: data.meta, error: null })
+        if (ignore) return
+        // 마지막 페이지의 마지막 항목을 지운 경우 등: 빈 페이지에 머무르지 않고 앞 페이지로 이동해 다시 조회
+        if (data.data.length === 0 && page > 0) {
+          setPage(Math.max(0, Math.min(page - 1, data.meta.totalPages - 1)))
+          return
+        }
+        setList({ key: listKey, items: data.data, meta: data.meta, error: null })
       })
       .catch((err) => {
         if (ignore) return
@@ -130,14 +144,31 @@ export default function ExpensesPage() {
     }
   }, [summaryKey, yearMonth, from, to])
 
-  useEffect(() => {
-    fetchCategories().then(setCategories)
+  // 초기 로드 및 카테고리 관리 모달의 onChanged — fetchCategories 가 reject 하지 않으므로 안전하다.
+  // 실패 시 기존 목록은 유지하고 오류만 표시한다.
+  const applyCategories = useCallback((result: CategoriesResult) => {
+    if (result.ok) {
+      setCategories(result.items)
+      setCategoriesError(null)
+    } else {
+      setCategoriesError(result.error)
+    }
   }, [])
 
-  // 카테고리 관리 모달의 onChanged — fetchCategories 가 reject 하지 않으므로 안전하다
-  const reloadCategories = useCallback(async () => {
-    setCategories(await fetchCategories())
-  }, [])
+  useEffect(() => {
+    fetchCategories().then(applyCategories)
+  }, [applyCategories])
+
+  const loadCategories = useCallback(async () => {
+    applyCategories(await fetchCategories())
+  }, [applyCategories])
+
+  // 필터로 선택된 카테고리가 (카테고리 관리에서) 삭제되면 필터를 해제한다.
+  // 렌더 중 state 조정 (React 권장 패턴) — 조정 후에는 조건이 거짓이 되어 반복되지 않는다.
+  if (categoryFilter !== '' && !categories.some((c) => c.id === categoryFilter)) {
+    setCategoryFilter('')
+    setPage(0)
+  }
 
   const reloadAfterChange = () => setReloadKey((k) => k + 1)
 
@@ -155,11 +186,14 @@ export default function ExpensesPage() {
 
   // 목록 항목에는 memo 가 없으므로 반드시 단건 조회 후 폼을 연다
   const startEdit = async (item: ExpenseSummary) => {
+    const seq = ++editRequestSeq.current
     setActionError(null)
     try {
       const { data } = await getExpense(item.id)
+      if (seq !== editRequestSeq.current) return
       setForm({ expense: data.data })
     } catch (err) {
+      if (seq !== editRequestSeq.current) return
       setActionError(getApiErrorMessage(err, '상세 정보를 불러오지 못했습니다.'))
     }
   }
@@ -226,29 +260,7 @@ export default function ExpensesPage() {
 
       {summaryError && <p className="mb-3 text-sm text-red-500">{summaryError}</p>}
 
-      <div className="mb-6 grid grid-cols-3 gap-3">
-        <div className="rounded-xl bg-white p-4 shadow">
-          <p className="text-xs text-gray-500">수입</p>
-          <p data-testid="summary-income" className="text-lg font-semibold text-blue-600">
-            {monthly ? formatAmount(monthly.totalIncome) : '-'}
-          </p>
-        </div>
-        <div className="rounded-xl bg-white p-4 shadow">
-          <p className="text-xs text-gray-500">지출</p>
-          <p data-testid="summary-expense" className="text-lg font-semibold text-red-500">
-            {monthly ? formatAmount(monthly.totalExpense) : '-'}
-          </p>
-        </div>
-        <div className="rounded-xl bg-white p-4 shadow">
-          <p className="text-xs text-gray-500">합계</p>
-          <p
-            data-testid="summary-net"
-            className={`text-lg font-semibold ${monthly && monthly.net < 0 ? 'text-red-500' : ''}`}
-          >
-            {monthly ? formatAmount(monthly.net) : '-'}
-          </p>
-        </div>
-      </div>
+      <ExpenseSummaryCards monthly={monthly} />
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="flex overflow-hidden rounded border">
@@ -280,7 +292,8 @@ export default function ExpensesPage() {
           <option value="">전체</option>
           {filterCategories.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name}
+              {/* 유형 '전체'일 때는 같은 이름의 지출/수입 카테고리를 구분하도록 유형을 붙인다 (Flutter 와 동일) */}
+              {typeFilter ? c.name : `${c.name} (${EXPENSE_TYPE_LABELS[c.type]})`}
             </option>
           ))}
         </select>
@@ -304,131 +317,27 @@ export default function ExpensesPage() {
 
       {listError && <p className="mb-3 text-sm text-red-500">{listError}</p>}
       {actionError && <p className="mb-3 text-sm text-red-500">{actionError}</p>}
+      {categoriesError && <p className="mb-3 text-sm text-red-500">{categoriesError}</p>}
 
-      <div className="overflow-hidden rounded-xl bg-white shadow">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-gray-600">
-            <tr>
-              <th className="px-4 py-2">날짜</th>
-              <th className="px-4 py-2">카테고리</th>
-              <th className="px-4 py-2">설명</th>
-              <th className="px-4 py-2 text-right">금액</th>
-              <th className="px-4 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr
-                key={item.id}
-                onClick={() => startEdit(item)}
-                onKeyDown={(e) => {
-                  if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-                    e.preventDefault()
-                    startEdit(item)
-                  }
-                }}
-                tabIndex={0}
-                aria-label={`${item.categoryName} ${item.description ?? ''} 수정`}
-                className="cursor-pointer border-t hover:bg-gray-50 focus:bg-blue-50 focus:outline-none"
-              >
-                <td className="px-4 py-2">{dayjs(item.transactionDate).format('M/D')}</td>
-                <td className="px-4 py-2">{item.categoryName}</td>
-                <td className="px-4 py-2">{item.description || '-'}</td>
-                <td
-                  className={`px-4 py-2 text-right ${
-                    item.type === 'INCOME' ? 'text-blue-600' : 'text-red-500'
-                  }`}
-                >
-                  {formatSignedAmount(item.type, item.amount)}
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDelete(item)
-                    }}
-                    className="text-red-500 hover:underline"
-                  >
-                    삭제
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {isLoading && (
-              <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
-                  불러오는 중...
-                </td>
-              </tr>
-            )}
-            {!isLoading && items.length === 0 && !listError && (
-              <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
-                  내역이 없습니다
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <ExpenseListTable
+        items={items}
+        meta={meta}
+        page={page}
+        isLoading={isLoading}
+        error={listError}
+        onEdit={startEdit}
+        onDelete={onDelete}
+        onPageChange={setPage}
+      />
 
-      {meta && meta.totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-center gap-2">
-          <button
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-            disabled={page === 0}
-            className="rounded border px-3 py-1 text-sm disabled:opacity-40"
-          >
-            이전
-          </button>
-          <span className="text-sm text-gray-600">
-            {page + 1} / {meta.totalPages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(meta.totalPages - 1, p + 1))}
-            disabled={page >= meta.totalPages - 1}
-            className="rounded border px-3 py-1 text-sm disabled:opacity-40"
-          >
-            다음
-          </button>
-        </div>
-      )}
-
-      <section className="mt-6 rounded-xl bg-white p-4 shadow">
-        <h2 className="mb-3 text-lg font-medium">카테고리별 지출</h2>
-        {byCategory && byCategory.categories.length > 0 ? (
-          <ul className="space-y-2">
-            {byCategory.categories.map((c) => {
-              const ratio = byCategory.total > 0 ? (c.amount / byCategory.total) * 100 : 0
-              return (
-                <li key={c.categoryId} className="text-sm">
-                  <div className="mb-1 flex justify-between">
-                    <span>
-                      {c.categoryName} <span className="text-gray-400">({c.count}건)</span>
-                    </span>
-                    <span>
-                      {formatAmount(c.amount)}{' '}
-                      <span className="text-gray-400">{ratio.toFixed(1)}%</span>
-                    </span>
-                  </div>
-                  <div className="h-2 rounded bg-gray-100">
-                    <div className="h-2 rounded bg-red-400" style={{ width: `${ratio}%` }} />
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <p className="text-sm text-gray-400">지출 내역이 없습니다</p>
-        )}
-      </section>
+      <CategorySummarySection byCategory={byCategory} />
 
       {form && (
         <ExpenseFormModal
           expense={form.expense}
           defaultDate={defaultFormDate}
           categories={categories}
+          categoriesError={categoriesError}
           onClose={() => setForm(null)}
           onSaved={() => {
             setForm(null)
@@ -444,8 +353,9 @@ export default function ExpensesPage() {
       {isCategoryManagerOpen && (
         <CategoryManagerModal
           categories={categories}
+          loadError={categoriesError}
           initialType={typeFilter || 'EXPENSE'}
-          onChanged={reloadCategories}
+          onChanged={loadCategories}
           onClose={closeCategoryManager}
         />
       )}

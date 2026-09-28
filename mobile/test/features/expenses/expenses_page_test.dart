@@ -157,6 +157,29 @@ void main() {
       expect(find.text('지출 내역이 없습니다'), findsOneWidget);
     });
 
+    testWidgets('빈 페이지여도 전체 페이지가 여러 개면 페이지 이동 버튼을 보여준다', (tester) async {
+      await _pump(
+        tester,
+        _Harness(
+          listState: const AsyncValue.data(ExpensesState(
+            items: [],
+            page: 1,
+            size: 20,
+            total: 20,
+            totalPages: 2,
+          )),
+        ),
+      );
+
+      expect(find.text('내역이 없습니다'), findsOneWidget);
+      expect(find.text('2 / 2'), findsOneWidget);
+      final prev = tester.widget<IconButton>(find.ancestor(
+        of: find.byTooltip('이전 페이지'),
+        matching: find.byType(IconButton),
+      ));
+      expect(prev.onPressed, isNotNull);
+    });
+
     testWidgets('에러 상태일 때 서버 오류 메시지를 보여준다', (tester) async {
       await _pump(
         tester,

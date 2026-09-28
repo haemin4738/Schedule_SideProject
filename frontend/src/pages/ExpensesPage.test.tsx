@@ -7,6 +7,7 @@ import ExpensesPage from './ExpensesPage'
 import {
   createExpense,
   deleteExpense,
+  deleteExpenseCategory,
   getCategorySummary,
   getExpense,
   getExpenseCategories,
@@ -37,6 +38,7 @@ const mockedCreateExpense = vi.mocked(createExpense)
 const mockedUpdateExpense = vi.mocked(updateExpense)
 const mockedDeleteExpense = vi.mocked(deleteExpense)
 const mockedGetExpenseCategories = vi.mocked(getExpenseCategories)
+const mockedDeleteExpenseCategory = vi.mocked(deleteExpenseCategory)
 const mockedGetMonthlySummary = vi.mocked(getMonthlySummary)
 const mockedGetCategorySummary = vi.mocked(getCategorySummary)
 
@@ -140,6 +142,25 @@ async function openCreateFormWithCategories(user: ReturnType<typeof userEvent.se
   return dialog
 }
 
+function listPage(items: ExpenseSummary[], page: number, totalPages: number) {
+  return {
+    data: { success: true, data: items, meta: { page, size: 20, total: totalPages * 20, totalPages } },
+  } as never
+}
+
+/** 식비 필터 옵션이 보일 때까지 기다린 뒤 카테고리 필터 select 를 반환한다 */
+async function waitForCategoryFilter() {
+  const categorySelect = screen.getByLabelText('카테고리 필터')
+  await waitFor(() => {
+    expect(within(categorySelect).getByRole('option', { name: '식비 (지출)' })).toBeInTheDocument()
+  })
+  return categorySelect
+}
+
+function detailOf(item: ExpenseSummary) {
+  return { data: { success: true, data: { ...item, memo: null, createdAt: '', updatedAt: '' } } } as never
+}
+
 function serverError(status: number, message: string) {
   return Object.assign(new Error(`status ${status}`), {
     response: { status, data: { success: false, data: null, error: message } },
@@ -239,6 +260,41 @@ describe('ExpensesPage', () => {
       expect(screen.getByTestId('summary-net')).toHaveClass('text-red-500')
     })
 
+    it('render_withCategorySummaryRatioNotInteger_roundsToIntegerPercent', async () => {
+      mockListResponse([])
+      mockSummaries({
+        categories: [
+          { categoryId: 1, categoryName: '식비', amount: 2, count: 1 },
+          { categoryId: 3, categoryName: '교통', amount: 1, count: 1 },
+        ],
+      })
+      renderPage()
+
+      expect(await screen.findByText('67%')).toBeInTheDocument()
+      expect(screen.getByText('33%')).toBeInTheDocument()
+    })
+
+    it('render_whenCategoriesFail_showsErrorInsteadOfEmptyGuide', async () => {
+      const user = userEvent.setup()
+      mockListResponse([])
+      mockedGetExpenseCategories.mockRejectedValue(new Error('network error'))
+      renderPage()
+
+      expect(await screen.findByText('카테고리를 불러오지 못했습니다.')).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: '내역 추가' }))
+      const form = screen.getByRole('dialog', { name: '내역 추가' })
+      expect(within(form).getByText('카테고리를 불러오지 못했습니다.')).toBeInTheDocument()
+      expect(within(form).queryByText('먼저 카테고리를 추가하세요.')).not.toBeInTheDocument()
+      expect(within(form).getByRole('button', { name: '저장' })).toBeDisabled()
+      await user.click(within(form).getByRole('button', { name: '취소' }))
+
+      await user.click(screen.getByRole('button', { name: '카테고리 관리' }))
+      const manager = screen.getByRole('dialog', { name: '카테고리 관리' })
+      expect(within(manager).getByText('카테고리를 불러오지 못했습니다.')).toBeInTheDocument()
+      expect(within(manager).queryByText('카테고리가 없습니다.')).not.toBeInTheDocument()
+    })
+
     it('render_withCategorySummary_showsAmountCountAndRatio', async () => {
       mockListResponse([])
       mockSummaries({
@@ -250,8 +306,8 @@ describe('ExpensesPage', () => {
       renderPage()
 
       expect(await screen.findByText('(3건)')).toBeInTheDocument()
-      expect(screen.getByText('75.0%')).toBeInTheDocument()
-      expect(screen.getByText('25.0%')).toBeInTheDocument()
+      expect(screen.getByText('75%')).toBeInTheDocument()
+      expect(screen.getByText('25%')).toBeInTheDocument()
       expect(screen.queryByText('지출 내역이 없습니다')).not.toBeInTheDocument()
     })
   })
@@ -294,10 +350,7 @@ describe('ExpensesPage', () => {
       renderPage()
       await screen.findByText('내역이 없습니다')
 
-      const categorySelect = screen.getByLabelText('카테고리 필터')
-      await waitFor(() => {
-        expect(within(categorySelect).getByRole('option', { name: '식비' })).toBeInTheDocument()
-      })
+      const categorySelect = await waitForCategoryFilter()
       await user.selectOptions(categorySelect, '1')
       await waitFor(() => {
         expect(mockedGetExpenses).toHaveBeenLastCalledWith(expect.objectContaining({ categoryId: 1 }))
@@ -311,8 +364,108 @@ describe('ExpensesPage', () => {
         )
       })
       expect(categorySelect).toHaveValue('')
-      expect(within(categorySelect).queryByRole('option', { name: '식비' })).not.toBeInTheDocument()
+      expect(within(categorySelect).queryByRole('option', { name: /식비/ })).not.toBeInTheDocument()
       expect(within(categorySelect).getByRole('option', { name: '월급' })).toBeInTheDocument()
+    })
+
+    it('categoryFilter_whenTypeIsAll_showsTypeSuffixInOptions', async () => {
+      mockListResponse([])
+      renderPage()
+      await screen.findByText('내역이 없습니다')
+
+      const categorySelect = await waitForCategoryFilter()
+      expect(within(categorySelect).getByRole('option', { name: '월급 (수입)' })).toBeInTheDocument()
+    })
+
+    it('changePage_whenNextAndPrevClicked_requestsNextThenPreviousPage', async () => {
+      const user = userEvent.setup()
+      mockListResponse([lunch], { page: 0, size: 20, total: 40, totalPages: 2 })
+      renderPage()
+      await screen.findByText('점심')
+
+      await user.click(screen.getByRole('button', { name: '다음' }))
+      await waitFor(() => {
+        expect(mockedGetExpenses).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 }))
+      })
+      expect(await screen.findByText('2 / 2')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '다음' })).toBeDisabled()
+
+      await user.click(screen.getByRole('button', { name: '이전' }))
+      await waitFor(() => {
+        expect(mockedGetExpenses).toHaveBeenLastCalledWith(expect.objectContaining({ page: 0 }))
+      })
+      expect(await screen.findByText('1 / 2')).toBeInTheDocument()
+    })
+
+    it('changeCategoryFilter_whenOnSecondPage_resetsToPage0', async () => {
+      const user = userEvent.setup()
+      mockListResponse([lunch], { page: 0, size: 20, total: 40, totalPages: 2 })
+      renderPage()
+      await screen.findByText('점심')
+      await user.click(screen.getByRole('button', { name: '다음' }))
+      await waitFor(() => {
+        expect(mockedGetExpenses).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 }))
+      })
+
+      await user.selectOptions(await waitForCategoryFilter(), '1')
+
+      await waitFor(() => {
+        expect(mockedGetExpenses).toHaveBeenLastCalledWith(
+          expect.objectContaining({ categoryId: 1, page: 0 }),
+        )
+      })
+    })
+
+    it('categoryFilter_whenSelectedCategoryDeletedInManager_resetsFilterAndPage', async () => {
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      mockListResponse([lunch], { page: 0, size: 20, total: 40, totalPages: 2 })
+      mockedDeleteExpenseCategory.mockResolvedValue({} as never)
+      renderPage()
+      await screen.findByText('점심')
+      const categorySelect = await waitForCategoryFilter()
+      await user.selectOptions(categorySelect, '1')
+      await user.click(screen.getByRole('button', { name: '다음' }))
+      await waitFor(() => {
+        expect(mockedGetExpenses).toHaveBeenLastCalledWith(
+          expect.objectContaining({ categoryId: 1, page: 1 }),
+        )
+      })
+
+      mockCategories([salaryCategory]) // 삭제 후 재조회 결과
+      await user.click(screen.getByRole('button', { name: '카테고리 관리' }))
+      const manager = screen.getByRole('dialog', { name: '카테고리 관리' })
+      await user.click(within(manager).getByRole('button', { name: '삭제' }))
+
+      await waitFor(() => {
+        expect(mockedDeleteExpenseCategory).toHaveBeenCalledWith(1)
+      })
+      await waitFor(() => {
+        expect(mockedGetExpenses).toHaveBeenLastCalledWith(
+          expect.objectContaining({ categoryId: undefined, page: 0 }),
+        )
+      })
+      expect(categorySelect).toHaveValue('')
+    })
+
+    it('closeCategoryManager_whenClosed_reloadsListAndSummaries', async () => {
+      const user = userEvent.setup()
+      mockListResponse([])
+      renderPage()
+      await screen.findByText('내역이 없습니다')
+      await user.click(screen.getByRole('button', { name: '카테고리 관리' }))
+      const listCalls = mockedGetExpenses.mock.calls.length
+      const monthlyCalls = mockedGetMonthlySummary.mock.calls.length
+      const byCategoryCalls = mockedGetCategorySummary.mock.calls.length
+
+      await user.click(screen.getByRole('button', { name: '닫기' }))
+
+      expect(screen.queryByRole('dialog', { name: '카테고리 관리' })).not.toBeInTheDocument()
+      await waitFor(() => {
+        expect(mockedGetExpenses.mock.calls.length).toBeGreaterThan(listCalls)
+      })
+      expect(mockedGetMonthlySummary.mock.calls.length).toBeGreaterThan(monthlyCalls)
+      expect(mockedGetCategorySummary.mock.calls.length).toBeGreaterThan(byCategoryCalls)
     })
   })
 
@@ -349,6 +502,48 @@ describe('ExpensesPage', () => {
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
       })
       expect(mockedGetExpenses.mock.calls.length).toBeGreaterThan(listCalls)
+    })
+
+    it('create_withSurroundingSpaces_trimsDescriptionButKeepsMemoAsIs', async () => {
+      const user = userEvent.setup()
+      mockListResponse([])
+      mockedCreateExpense.mockResolvedValue({ data: { success: true, data: {} } } as never)
+      renderPage()
+      await screen.findByText('내역이 없습니다')
+
+      const dialog = await openCreateFormWithCategories(user)
+      await user.selectOptions(within(dialog).getByLabelText('카테고리'), '1')
+      await user.type(within(dialog).getByPlaceholderText('금액 (원)'), '1000')
+      await user.type(within(dialog).getByPlaceholderText('설명'), '  점심  ')
+      await user.type(within(dialog).getByPlaceholderText('메모'), '  들여쓴 메모 ')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() => {
+        expect(mockedCreateExpense).toHaveBeenCalledWith(
+          expect.objectContaining({ description: '점심', memo: '  들여쓴 메모 ' }),
+        )
+      })
+    })
+
+    it('create_withWhitespaceOnlyDescriptionAndMemo_sendsNull', async () => {
+      const user = userEvent.setup()
+      mockListResponse([])
+      mockedCreateExpense.mockResolvedValue({ data: { success: true, data: {} } } as never)
+      renderPage()
+      await screen.findByText('내역이 없습니다')
+
+      const dialog = await openCreateFormWithCategories(user)
+      await user.selectOptions(within(dialog).getByLabelText('카테고리'), '1')
+      await user.type(within(dialog).getByPlaceholderText('금액 (원)'), '1000')
+      await user.type(within(dialog).getByPlaceholderText('설명'), '   ')
+      await user.type(within(dialog).getByPlaceholderText('메모'), '  ')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() => {
+        expect(mockedCreateExpense).toHaveBeenCalledWith(
+          expect.objectContaining({ description: null, memo: null }),
+        )
+      })
     })
 
     it('create_whenNotCurrentMonth_defaultsDateToFirstDayOfSelectedMonth', async () => {
@@ -542,6 +737,37 @@ describe('ExpensesPage', () => {
       expect(screen.getByRole('button', { name: '내역 추가' })).toHaveFocus()
     })
 
+    it('edit_whenRowsClickedQuickly_usesOnlyLastDetailResponse', async () => {
+      const user = userEvent.setup()
+      mockListResponse([lunch, salary])
+      let resolveLunch: (value: unknown) => void = () => {}
+      mockedGetExpense.mockImplementation(((id: number) =>
+        id === lunch.id
+          ? new Promise((resolve) => {
+              resolveLunch = resolve
+            })
+          : Promise.resolve(detailOf(salary))) as never)
+      mockedUpdateExpense.mockResolvedValue({ data: { success: true, data: {} } } as never)
+      renderPage()
+
+      await user.click(await screen.findByText('점심'))
+      await user.click(screen.getByText('+3,000,000원'))
+      const dialog = await screen.findByRole('dialog', { name: '내역 수정' })
+      expect(within(dialog).getByPlaceholderText('금액 (원)')).toHaveValue('3000000')
+
+      // 먼저 클릭한 행의 응답이 늦게 도착해도 폼 대상이 바뀌지 않아야 한다
+      resolveLunch(detailOf(lunch))
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() => {
+        expect(mockedUpdateExpense).toHaveBeenCalledWith(
+          salary.id,
+          expect.objectContaining({ amount: 3000000, categoryId: 2 }),
+        )
+      })
+      expect(mockedUpdateExpense).toHaveBeenCalledTimes(1)
+    })
+
     it('edit_whenDetailFetchFails_showsErrorAndDoesNotOpenForm', async () => {
       const user = userEvent.setup()
       mockListResponse([lunch])
@@ -577,6 +803,35 @@ describe('ExpensesPage', () => {
       expect(mockedGetMonthlySummary.mock.calls.length).toBeGreaterThan(summaryCalls)
       // 삭제 버튼 클릭이 행 클릭(수정)으로 전파되지 않아야 한다
       expect(mockedGetExpense).not.toHaveBeenCalled()
+    })
+
+    it('delete_whenLastItemOfLastPageDeleted_movesToPreviousPage', async () => {
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      let deleted = false
+      mockedGetExpenses.mockImplementation((({ page }: { page: number }) =>
+        Promise.resolve(
+          page === 0
+            ? listPage([lunch], 0, deleted ? 1 : 2)
+            : listPage(deleted ? [] : [salary], page, deleted ? 1 : 2),
+        )) as never)
+      mockedDeleteExpense.mockImplementation((() => {
+        deleted = true
+        return Promise.resolve({})
+      }) as never)
+      renderPage()
+      await screen.findByText('점심')
+      await user.click(screen.getByRole('button', { name: '다음' }))
+      await screen.findByText('+3,000,000원')
+
+      await user.click(screen.getByRole('button', { name: '삭제' }))
+
+      await waitFor(() => {
+        expect(mockedDeleteExpense).toHaveBeenCalledWith(salary.id)
+      })
+      expect(await screen.findByText('점심')).toBeInTheDocument()
+      expect(mockedGetExpenses).toHaveBeenLastCalledWith(expect.objectContaining({ page: 0 }))
+      expect(screen.queryByText('내역이 없습니다')).not.toBeInTheDocument()
     })
 
     it('delete_whenCancelled_doesNotCallApi', async () => {

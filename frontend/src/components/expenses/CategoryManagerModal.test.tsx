@@ -57,6 +57,20 @@ describe('CategoryManagerModal', () => {
     expect(screen.queryByText('식비')).not.toBeInTheDocument()
   })
 
+  it('render_whenLoadErrorGiven_showsErrorAndHidesEmptyMessage', () => {
+    render(
+      <CategoryManagerModal
+        categories={[]}
+        loadError="카테고리를 불러오지 못했습니다."
+        onChanged={vi.fn().mockResolvedValue(undefined)}
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('카테고리를 불러오지 못했습니다.')
+    expect(screen.queryByText('카테고리가 없습니다.')).not.toBeInTheDocument()
+  })
+
   it('add_withName_createsCategoryOfCurrentTabAndNotifiesParent', async () => {
     const user = userEvent.setup()
     mockedCreate.mockResolvedValue({} as never)

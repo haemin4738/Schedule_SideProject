@@ -93,8 +93,11 @@ class _ExpenseFormSheetState extends ConsumerState<ExpenseFormSheet> {
     });
     final notifier = ref.read(expensesProvider.notifier);
     final transactionDate = DateFormat('yyyy-MM-dd').format(_transactionDate);
+    // React 와 동일 규칙: description 은 trim, memo 는 줄바꿈·들여쓰기를 보존하기 위해 원문 그대로.
+    // 둘 다 공백만 있으면 null 로 보낸다.
     final description = _descriptionController.text.trim();
-    final memo = _memoController.text.trim();
+    final memoText = _memoController.text;
+    final memo = memoText.trim().isEmpty ? null : memoText;
     final amount = int.parse(_amountController.text);
     try {
       if (widget.existing == null) {
@@ -104,7 +107,7 @@ class _ExpenseFormSheetState extends ConsumerState<ExpenseFormSheet> {
           amount: amount,
           transactionDate: transactionDate,
           description: description.isEmpty ? null : description,
-          memo: memo.isEmpty ? null : memo,
+          memo: memo,
         );
       } else {
         await notifier.update(
@@ -114,7 +117,7 @@ class _ExpenseFormSheetState extends ConsumerState<ExpenseFormSheet> {
           amount: amount,
           transactionDate: transactionDate,
           description: description.isEmpty ? null : description,
-          memo: memo.isEmpty ? null : memo,
+          memo: memo,
         );
       }
       if (mounted) Navigator.pop(context, true);

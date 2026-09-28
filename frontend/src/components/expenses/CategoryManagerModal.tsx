@@ -13,6 +13,8 @@ const MAX_NAME_LENGTH = 50
 
 interface Props {
   categories: ExpenseCategory[]
+  /** 카테고리 목록 조회 실패 메시지. 있으면 '카테고리가 없습니다' 대신 오류를 보여준다 */
+  loadError?: string | null
   initialType?: ExpenseType
   /** 카테고리 추가/변경/삭제 후 부모가 목록을 다시 불러오도록 호출 */
   onChanged: () => Promise<void>
@@ -28,6 +30,7 @@ const validateName = (name: string): string | null => {
 
 export default function CategoryManagerModal({
   categories,
+  loadError = null,
   initialType = 'EXPENSE',
   onChanged,
   onClose,
@@ -147,6 +150,11 @@ export default function CategoryManagerModal({
         </div>
 
         {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
+        {loadError && (
+          <p role="alert" className="mb-3 text-sm text-red-500">
+            {loadError}
+          </p>
+        )}
 
         <ul className="divide-y rounded border">
           {tabCategories.map((c) => (
@@ -202,7 +210,7 @@ export default function CategoryManagerModal({
               )}
             </li>
           ))}
-          {tabCategories.length === 0 && (
+          {tabCategories.length === 0 && !loadError && (
             <li className="px-3 py-4 text-center text-sm text-gray-400">카테고리가 없습니다.</li>
           )}
         </ul>

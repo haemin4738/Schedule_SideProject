@@ -89,12 +89,20 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
         ),
       ],
       data: (data) {
+        final pagination = data.totalPages > 1
+            ? _Pagination(
+                page: data.page,
+                totalPages: data.totalPages,
+                onPageChanged: notifier.goToPage,
+              )
+            : null;
         if (data.items.isEmpty) {
-          return const [
-            Padding(
+          return [
+            const Padding(
               padding: EdgeInsets.all(24),
               child: Center(child: Text('내역이 없습니다')),
             ),
+            ?pagination,
           ];
         }
         return [
@@ -114,28 +122,7 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
                   onTap: () => _openForm(existingId: item.id),
                 ),
               )),
-          if (data.totalPages > 1)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.chevron_left),
-                    onPressed: data.page > 0
-                        ? () => notifier.goToPage(data.page - 1)
-                        : null,
-                  ),
-                  Text('${data.page + 1} / ${data.totalPages}'),
-                  IconButton(
-                    icon: const Icon(Icons.chevron_right),
-                    onPressed: data.page < data.totalPages - 1
-                        ? () => notifier.goToPage(data.page + 1)
-                        : null,
-                  ),
-                ],
-              ),
-            ),
+          ?pagination,
         ];
       },
     );
@@ -236,18 +223,46 @@ class _ExpensesPageState extends ConsumerState<ExpensesPage> {
       MaterialPageRoute(builder: (_) => const ExpenseCategoriesPage()),
     );
     if (!mounted) return;
-    // 카테고리 이름이 바뀌었을 수 있으므로 목록/요약을 다시 조회한다.
-    final notifier = ref.read(expensesProvider.notifier);
-    final categories = ref.read(expenseCategoriesProvider).valueOrNull;
-    final selectedId = notifier.categoryIdFilter;
-    if (selectedId != null &&
-        categories != null &&
-        !categories.any((c) => c.id == selectedId)) {
-      notifier.filter(type: notifier.typeFilter);
-    } else {
-      notifier.refresh();
-    }
+    // 카테고리 이름이 바뀌었거나 선택 중인 카테고리가 삭제됐을 수 있으므로 목록/요약을 다시 조회한다.
+    ref.read(expensesProvider.notifier).refreshAfterCategoryChange(
+        ref.read(expenseCategoriesProvider).valueOrNull);
     ref.read(expenseSummaryProvider.notifier).refresh();
+  }
+}
+
+class _Pagination extends StatelessWidget {
+  final int page;
+  final int totalPages;
+  final ValueChanged<int> onPageChanged;
+
+  const _Pagination({
+    required this.page,
+    required this.totalPages,
+    required this.onPageChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            tooltip: '이전 페이지',
+            onPressed: page > 0 ? () => onPageChanged(page - 1) : null,
+          ),
+          Text('${page + 1} / $totalPages'),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            tooltip: '다음 페이지',
+            onPressed:
+                page < totalPages - 1 ? () => onPageChanged(page + 1) : null,
+          ),
+        ],
+      ),
+    );
   }
 }
 

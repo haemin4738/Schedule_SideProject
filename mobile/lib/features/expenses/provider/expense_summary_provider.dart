@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/core/network/dio_client.dart';
@@ -45,18 +46,20 @@ class ExpenseSummaryState {
 
 class ExpenseSummaryNotifier
     extends StateNotifier<AsyncValue<ExpenseSummaryState>> {
-  ExpenseSummaryNotifier({DateTime? initialMonth})
+  ExpenseSummaryNotifier({DateTime? initialMonth, Dio? dio})
       : month = firstDayOfMonth(initialMonth ?? DateTime.now()),
+        _dio = dio ?? createDio(),
         super(const AsyncValue.loading()) {
     fetch(month);
   }
 
-  final _dio = createDio();
+  final Dio _dio;
 
   DateTime month;
   int _requestSeq = 0;
 
   Future<void> fetch(DateTime newMonth) async {
+    if (!mounted) return;
     month = firstDayOfMonth(newMonth);
     final seq = ++_requestSeq;
     state = const AsyncValue.loading();
@@ -96,7 +99,8 @@ class ExpenseSummaryNotifier
   Future<void> refresh() => fetch(month);
 }
 
-final expenseSummaryProvider = StateNotifierProvider<ExpenseSummaryNotifier,
-    AsyncValue<ExpenseSummaryState>>(
+/// 화면 재진입 시 이번 달로 다시 시작하고, 로그아웃 후 이전 사용자 데이터가 남지 않도록 autoDispose.
+final expenseSummaryProvider = StateNotifierProvider.autoDispose<
+    ExpenseSummaryNotifier, AsyncValue<ExpenseSummaryState>>(
   (_) => ExpenseSummaryNotifier(),
 );
