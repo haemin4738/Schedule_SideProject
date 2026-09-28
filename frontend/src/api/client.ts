@@ -1,7 +1,9 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios'
 import { useAuthStore } from '@/store/authStore'
 
-const baseURL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
+// 기본은 같은 출처 상대경로(/api/...) — 개발 시 Vite 프록시가 백엔드로 전달한다.
+// API를 다른 출처에 둘 때만 VITE_API_BASE_URL 을 지정한다 (이 경우 백엔드 CORS 설정 필요)
+const baseURL = import.meta.env.VITE_API_BASE_URL ?? ''
 
 const client = axios.create({
   baseURL,

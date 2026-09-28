@@ -48,9 +48,12 @@ export default function CalendarPage() {
 
   return (
     <div className="flex h-screen flex-col p-4">
-      <div className="mb-2 flex justify-end">
+      <div className="mb-2 flex justify-end gap-3">
         <Link to="/job-applications" className="text-sm text-blue-500 hover:underline">
           구직활동
+        </Link>
+        <Link to="/expenses" className="text-sm text-blue-500 hover:underline">
+          가계부
         </Link>
       </div>
       <div className="flex-1">

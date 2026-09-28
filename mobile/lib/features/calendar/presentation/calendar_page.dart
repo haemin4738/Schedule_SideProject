@@ -45,6 +45,11 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
             onPressed: () => context.push('/job-applications'),
           ),
           IconButton(
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+            tooltip: '가계부',
+            onPressed: () => context.push('/expenses'),
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => ref.read(eventsProvider.notifier).refresh(),
           ),
