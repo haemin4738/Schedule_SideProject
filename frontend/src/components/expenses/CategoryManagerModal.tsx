@@ -7,6 +7,7 @@ import {
 import { getApiErrorMessage } from '@/api/errorMessage'
 import { EXPENSE_TYPE_OPTIONS, type ExpenseType } from '@/constants/expenseType'
 import { useState } from 'react'
+import { useDialog } from './useDialog'
 
 const MAX_NAME_LENGTH = 50
 
@@ -86,6 +87,8 @@ export default function CategoryManagerModal({
     await run(() => deleteExpenseCategory(category.id), '카테고리 삭제에 실패했습니다.')
   }
 
+  const dialogRef = useDialog<HTMLDivElement>(onClose)
+
   const changeTab = (type: ExpenseType) => {
     setTab(type)
     setEditingId(null)
@@ -95,7 +98,10 @@ export default function CategoryManagerModal({
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4">
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         aria-label="카테고리 관리"
         className="max-h-full w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow"
       >

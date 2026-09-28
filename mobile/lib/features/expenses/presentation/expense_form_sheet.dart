@@ -66,7 +66,8 @@ class _ExpenseFormSheetState extends ConsumerState<ExpenseFormSheet> {
     final picked = await showDatePicker(
       context: context,
       initialDate: _transactionDate,
-      firstDate: DateTime(2000),
+      // 기존 내역의 날짜가 범위 밖이어도 달력이 열리도록 범위를 넉넉히 잡는다
+      firstDate: DateTime(1900),
       lastDate: DateTime(2100),
     );
     if (picked != null) setState(() => _transactionDate = picked);

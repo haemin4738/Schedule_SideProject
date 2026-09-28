@@ -13,7 +13,8 @@ String expenseErrorMessage(Object error) {
     if (data is Map && data['error'] is String) return data['error'] as String;
     return '서버와 통신할 수 없습니다.';
   }
-  return error.toString();
+  // 응답 파싱 오류 등 내부 예외 메시지는 사용자에게 노출하지 않는다
+  return '요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.';
 }
 
 /// 해당 월의 1일 (시각 제거).

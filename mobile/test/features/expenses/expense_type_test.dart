@@ -60,6 +60,13 @@ void main() {
       );
       expect(expenseErrorMessage(e), '서버와 통신할 수 없습니다.');
     });
+
+    test('Dio 오류가 아닌 내부 예외는 메시지를 노출하지 않고 일반 안내 문구를 반환한다', () {
+      expect(
+        expenseErrorMessage(const FormatException('Unexpected character at offset 3')),
+        '요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.',
+      );
+    });
   });
 
   group('월 경계 계산', () {

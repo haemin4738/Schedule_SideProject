@@ -13,6 +13,7 @@ import {
   type ExpenseType,
 } from '@/constants/expenseType'
 import { useState } from 'react'
+import { useDialog } from './useDialog'
 import { useForm, useWatch } from 'react-hook-form'
 
 interface FormValues {
@@ -73,6 +74,9 @@ export default function ExpenseFormModal({
         },
   })
 
+  const dialogRef = useDialog<HTMLFormElement>(onClose)
+  // type 은 토글 버튼으로만 바꾸지만, setValue 전에 필드를 등록해 둔다 (react-hook-form 권장)
+  register('type')
   const selectedType = useWatch({ control, name: 'type' })
   const typeCategories = categories.filter((c) => c.type === selectedType)
   const noCategories = typeCategories.length === 0
@@ -108,7 +112,10 @@ export default function ExpenseFormModal({
   return (
     <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-4">
       <form
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         aria-label={expense ? '내역 수정' : '내역 추가'}
         onSubmit={handleSubmit(onSubmit)}
         className="max-h-full w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow"

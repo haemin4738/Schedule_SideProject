@@ -509,6 +509,39 @@ describe('ExpensesPage', () => {
       })
     })
 
+    it('edit_whenRowFocusedAndEnterPressed_opensEditForm', async () => {
+      const user = userEvent.setup()
+      mockListResponse([lunch])
+      mockedGetExpense.mockResolvedValue({
+        data: { success: true, data: { ...lunch, memo: null, createdAt: '', updatedAt: '' } },
+      } as never)
+      renderPage()
+
+      const row = (await screen.findByText('점심')).closest('tr') as HTMLElement
+      row.focus()
+      await user.keyboard('{Enter}')
+
+      expect(mockedGetExpense).toHaveBeenCalledWith(10)
+      expect(await screen.findByRole('dialog', { name: '내역 수정' })).toBeInTheDocument()
+    })
+
+    it('form_whenEscapePressed_closesDialogAndRestoresFocus', async () => {
+      const user = userEvent.setup()
+      mockListResponse([])
+      renderPage()
+      await screen.findByText('내역이 없습니다')
+
+      await user.click(screen.getByRole('button', { name: '내역 추가' }))
+      const dialog = screen.getByRole('dialog', { name: '내역 추가' })
+      expect(dialog).toHaveAttribute('aria-modal', 'true')
+      expect(dialog).toHaveFocus()
+
+      await user.keyboard('{Escape}')
+
+      expect(screen.queryByRole('dialog', { name: '내역 추가' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '내역 추가' })).toHaveFocus()
+    })
+
     it('edit_whenDetailFetchFails_showsErrorAndDoesNotOpenForm', async () => {
       const user = userEvent.setup()
       mockListResponse([lunch])

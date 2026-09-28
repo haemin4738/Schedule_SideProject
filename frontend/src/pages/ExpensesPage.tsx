@@ -185,8 +185,10 @@ export default function ExpensesPage() {
   const meta = list?.meta ?? null
   const isLoading = list?.key !== listKey
   const listError = isLoading ? null : (list?.error ?? null)
-  const monthly = summary?.monthly ?? null
-  const byCategory = summary?.byCategory ?? null
+  // 월을 바꾼 직후 이전 달 요약이 보이지 않도록, 현재 조건으로 불러온 결과만 쓴다
+  const isSummaryCurrent = summary?.key === summaryKey
+  const monthly = isSummaryCurrent ? summary.monthly : null
+  const byCategory = isSummaryCurrent ? summary.byCategory : null
   const summaryError = summary?.key === summaryKey ? summary.error : null
 
   const isCurrentMonth = month.isSame(dayjs(), 'month')
@@ -319,7 +321,15 @@ export default function ExpensesPage() {
               <tr
                 key={item.id}
                 onClick={() => startEdit(item)}
-                className="cursor-pointer border-t hover:bg-gray-50"
+                onKeyDown={(e) => {
+                  if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault()
+                    startEdit(item)
+                  }
+                }}
+                tabIndex={0}
+                aria-label={`${item.categoryName} ${item.description ?? ''} 수정`}
+                className="cursor-pointer border-t hover:bg-gray-50 focus:bg-blue-50 focus:outline-none"
               >
                 <td className="px-4 py-2">{dayjs(item.transactionDate).format('M/D')}</td>
                 <td className="px-4 py-2">{item.categoryName}</td>
