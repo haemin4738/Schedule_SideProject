@@ -21,6 +21,13 @@ subprojects {
         mavenCentral()
     }
 
+    // Boot 4.1.1 BOM 기본 버전의 알려진 CVE 대응 — 다음 Boot 패치(4.1.2+)에서 BOM이 올라가면 제거
+    // (Spring Boot 플러그인이 자동으로 가져오는 BOM에도 적용되도록 프로젝트 속성으로 지정)
+    ext['tomcat.version'] = '11.0.26'        // CVE-2026-65182, CVE-2026-68763, CVE-2026-86350 등
+    ext['jackson-bom.version'] = '3.1.7'     // CVE-2026-89407, CVE-2026-89425
+    ext['jackson-2-bom.version'] = '2.21.7'  // 〃 (jjwt-jackson이 사용)
+    ext['mysql.version'] = '9.6.0'           // CVE-2026-60586 등(9.7.0~9.7.1 영향). 26.x는 MySQL 8.4+ 전용이라 8.0 지원하는 9.6.0 사용
+
     dependencyManagement {
         imports {
             mavenBom "org.springframework.boot:spring-boot-dependencies:4.1.1"

@@ -12,6 +12,8 @@ import org.springframework.data.redis.serializer.RedisSerializer;
 import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
 
 @Configuration
 @EnableCaching
@@ -29,11 +31,12 @@ public class RedisConfig {
                 .build();
     }
 
-    // 캐시 값에 기록된 타입 정보로 역직렬화하므로, 허용할 타입을 애플리케이션/JDK 컬렉션·시간 타입으로 제한한다
+    // 캐시 값에 기록된 타입 정보로 역직렬화하므로, 허용할 타입을 애플리케이션 타입과 필요한 JDK 타입으로 제한한다
     static RedisSerializer<Object> cacheValueSerializer() {
         BasicPolymorphicTypeValidator validator = BasicPolymorphicTypeValidator.builder()
                 .allowIfSubType("com.lifelog.")
-                .allowIfSubType("java.util.")
+                .allowIfSubType(ArrayList.class)
+                .allowIfSubType(HashMap.class)
                 .allowIfSubType("java.time.")
                 .build();
         return GenericJacksonJsonRedisSerializer.builder()
