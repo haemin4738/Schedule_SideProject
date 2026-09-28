@@ -29,6 +29,16 @@ const refreshAccessToken = async (): Promise<string> => {
   return data.data.accessToken
 }
 
+/** JWT의 exp(초)를 읽어 만료 여부를 판단한다. 형식이 잘못된 토큰은 만료로 본다. */
+export const isTokenExpired = (token: string, nowMs: number = Date.now()): boolean => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return typeof payload.exp !== 'number' || payload.exp * 1000 <= nowMs
+  } catch {
+    return true
+  }
+}
+
 /**
  * access 토큰을 재발급한다. 진행 중인 refresh가 있으면 그 결과를 공유한다.
  * refresh 토큰이 없거나 만료/무효(401/403)면 로그아웃한다. 네트워크 오류·5xx 같은 일시 장애로는 로그아웃하지 않는다.

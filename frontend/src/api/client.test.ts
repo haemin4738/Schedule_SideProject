@@ -1,6 +1,6 @@
 import axios, { AxiosError, type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import client from './client'
+import client, { isTokenExpired } from './client'
 import { useAuthStore } from '@/store/authStore'
 
 const unauthorized = (config: InternalAxiosRequestConfig) =>
@@ -141,5 +141,24 @@ describe('api client 401 처리', () => {
 
     await expect(client.get('/api/v1/events/1')).rejects.toMatchObject({ response: { status: 403 } })
     expect(refresh).not.toHaveBeenCalled()
+  })
+})
+
+describe('isTokenExpired', () => {
+  const token = (payload: object) =>
+    `header.${btoa(JSON.stringify(payload)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')}.sig`
+  const now = Date.UTC(2026, 8, 28, 12, 0, 0)
+
+  it('exp가 현재 이후면 만료되지 않은 것으로 본다', () => {
+    expect(isTokenExpired(token({ exp: now / 1000 + 60 }), now)).toBe(false)
+  })
+
+  it('exp가 현재 이전이면 만료로 본다', () => {
+    expect(isTokenExpired(token({ exp: now / 1000 - 1 }), now)).toBe(true)
+  })
+
+  it('형식이 잘못되었거나 exp가 없으면 만료로 본다', () => {
+    expect(isTokenExpired('not-a-jwt', now)).toBe(true)
+    expect(isTokenExpired(token({ sub: '1' }), now)).toBe(true)
   })
 })

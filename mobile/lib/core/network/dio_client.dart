@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 const _baseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://10.0.2.2:8080');
@@ -11,8 +12,12 @@ const _retriedKey = '_retried';
 /// refresh 토큰까지 만료/무효라 재로그인이 필요할 때 호출된다. AuthNotifier가 등록한다.
 void Function()? onSessionExpired;
 
-// 여러 Dio 인스턴스(화면별 provider)가 동시에 401을 받아도 refresh는 앱 전체에서 한 번만 호출한다
+// 여러 Dio 인스턴스(화면별 provider)가 동시에 401을 받아도 refresh는 앱 전체에서 한 번만 호출한다.
+// 결과(새 토큰)는 처음 refresh를 시작한 인스턴스의 storage에 저장되며, 앱의 모든 인스턴스는 같은 storage를 쓴다.
 Future<String>? _refreshing;
+
+@visibleForTesting
+void resetRefreshStateForTest() => _refreshing = null;
 
 Dio createDio({
   String baseUrl = _baseUrl,

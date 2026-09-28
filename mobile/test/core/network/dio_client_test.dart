@@ -53,7 +53,10 @@ void main() {
     refreshDio = Dio(BaseOptions(baseUrl: 'http://test'))..httpClientAdapter = refreshAdapter;
   });
 
-  tearDown(() => onSessionExpired = null);
+  tearDown(() {
+    onSessionExpired = null;
+    resetRefreshStateForTest();
+  });
 
   Dio dioWith(_FakeAdapter adapter) =>
       createDio(baseUrl: 'http://test', storage: storage, refreshClient: refreshDio)..httpClientAdapter = adapter;
