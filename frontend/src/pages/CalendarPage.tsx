@@ -1,3 +1,4 @@
+import { refreshSession } from '@/api/client'
 import { getEvents } from '@/api/events'
 import { useAuthStore } from '@/store/authStore'
 import dayjs from 'dayjs'
@@ -32,7 +33,13 @@ export default function CalendarPage() {
   useEffect(() => {
     if (!accessToken) return
     const es = new EventSource(`/api/v1/sse/events?token=${accessToken}`)
+    // 재연결(토큰 재발급 등) 시 끊겨 있던 동안의 변경을 반영한다
+    es.addEventListener('open', loadEvents)
     es.addEventListener('REFRESH', loadEvents)
+    // 만료된 토큰으로 재연결하면 401을 받고 EventSource가 재시도를 멈춘다 → 토큰을 재발급해 새 토큰으로 다시 연결한다
+    es.onerror = () => {
+      if (es.readyState === EventSource.CLOSED) refreshSession().catch(() => {})
+    }
     return () => es.close()
   }, [loadEvents, accessToken])
 

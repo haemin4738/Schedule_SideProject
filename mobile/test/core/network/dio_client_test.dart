@@ -83,6 +83,35 @@ void main() {
     expect(refreshAdapter.requests, hasLength(1));
   });
 
+  test('서로 다른 Dio 인스턴스가 동시에 401을 받아도 refresh는 한 번만 호출한다', () async {
+    ResponseBody handler(RequestOptions o) =>
+        o.headers['Authorization'] == 'Bearer new-access' ? _json(200, {'success': true}) : _unauthorized();
+
+    await Future.wait([
+      dioWith(_FakeAdapter(handler)).get('/api/v1/events'),
+      dioWith(_FakeAdapter(handler)).get('/api/v1/job-applications'),
+    ]);
+
+    expect(refreshAdapter.requests, hasLength(1));
+  });
+
+  test('저장된 refresh 토큰이 없으면 세션을 만료한다', () async {
+    FlutterSecureStorage.setMockInitialValues({'accessToken': 'expired-access'});
+    final api = _FakeAdapter((_) => _unauthorized());
+
+    await expectLater(dioWith(api).get('/api/v1/events'), throwsA(isA<DioException>()));
+    expect(refreshAdapter.requests, isEmpty);
+    expect(sessionExpired, isTrue);
+  });
+
+  test('재시도한 요청이 다시 401이면 refresh를 반복하지 않는다', () async {
+    final api = _FakeAdapter((_) => _unauthorized());
+
+    await expectLater(dioWith(api).get('/api/v1/events'), throwsA(isA<DioException>()));
+    expect(api.requests, hasLength(2));
+    expect(refreshAdapter.requests, hasLength(1));
+  });
+
   test('로그인 요청의 401(잘못된 비밀번호)은 refresh를 시도하지 않는다', () async {
     final api = _FakeAdapter((_) => _unauthorized());
 

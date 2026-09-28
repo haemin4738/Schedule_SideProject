@@ -4,11 +4,15 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 const _baseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://10.0.2.2:8080');
-const _authPathPrefix = '/api/v1/auth/';
+// 이 경로들의 401(잘못된 비밀번호, 만료된 refresh 토큰 등)은 재발급 대상이 아니다
+const _authPaths = {'/api/v1/auth/login', '/api/v1/auth/signup', '/api/v1/auth/refresh', '/api/v1/auth/logout'};
 const _retriedKey = '_retried';
 
 /// refresh 토큰까지 만료/무효라 재로그인이 필요할 때 호출된다. AuthNotifier가 등록한다.
 void Function()? onSessionExpired;
+
+// 여러 Dio 인스턴스(화면별 provider)가 동시에 401을 받아도 refresh는 앱 전체에서 한 번만 호출한다
+Future<String>? _refreshing;
 
 Dio createDio({
   String baseUrl = _baseUrl,
@@ -17,9 +21,6 @@ Dio createDio({
 }) {
   final dio = Dio(BaseOptions(baseUrl: baseUrl, contentType: 'application/json'));
   final refreshDio = refreshClient ?? Dio(BaseOptions(baseUrl: baseUrl));
-
-  // 동시에 여러 요청이 401을 받아도 refresh는 한 번만 호출한다
-  Future<String>? refreshing;
 
   Future<String> refreshAccessToken() async {
     final refreshToken = await storage.read(key: 'refreshToken');
@@ -41,16 +42,15 @@ Dio createDio({
     },
     onError: (error, handler) async {
       final options = error.requestOptions;
-      // 로그인/가입/refresh 자체의 401(잘못된 비밀번호 등)은 재발급 대상이 아니다
-      final isAuthRequest = options.path.contains(_authPathPrefix);
+      final isAuthRequest = _authPaths.contains(Uri.parse(options.path).path);
       if (error.response?.statusCode != 401 || isAuthRequest || options.extra[_retriedKey] == true) {
         return handler.next(error);
       }
 
       final String accessToken;
       try {
-        refreshing ??= refreshAccessToken().whenComplete(() => refreshing = null);
-        accessToken = await refreshing!;
+        _refreshing ??= refreshAccessToken().whenComplete(() => _refreshing = null);
+        accessToken = await _refreshing!;
       } on DioException catch (refreshError) {
         // refresh 토큰이 만료/무효일 때만 세션을 만료한다. 네트워크 오류·5xx 같은 일시 장애로는 로그아웃하지 않는다
         final status = refreshError.response?.statusCode;

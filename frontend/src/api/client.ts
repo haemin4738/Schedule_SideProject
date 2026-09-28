@@ -14,6 +14,9 @@ client.interceptors.request.use((config) => {
   return config
 })
 
+// 이 경로들의 401(잘못된 비밀번호, 만료된 refresh 토큰 등)은 재발급 대상이 아니다
+const AUTH_PATHS = new Set(['/api/v1/auth/login', '/api/v1/auth/signup', '/api/v1/auth/refresh', '/api/v1/auth/logout'])
+
 // 동시에 여러 요청이 401을 받아도 refresh는 한 번만 호출한다
 let refreshing: Promise<string> | null = null
 
@@ -26,30 +29,40 @@ const refreshAccessToken = async (): Promise<string> => {
   return data.data.accessToken
 }
 
+/**
+ * access 토큰을 재발급한다. 진행 중인 refresh가 있으면 그 결과를 공유한다.
+ * refresh 토큰이 없거나 만료/무효(401/403)면 로그아웃한다. 네트워크 오류·5xx 같은 일시 장애로는 로그아웃하지 않는다.
+ */
+export const refreshSession = async (): Promise<string> => {
+  refreshing ??= refreshAccessToken().finally(() => {
+    refreshing = null
+  })
+  try {
+    return await refreshing
+  } catch (refreshError) {
+    const status = axios.isAxiosError(refreshError) ? refreshError.response?.status : undefined
+    if (!axios.isAxiosError(refreshError) || status === 401 || status === 403) {
+      useAuthStore.getState().logout()
+    }
+    throw refreshError
+  }
+}
+
 client.interceptors.response.use(
   (res) => res,
   async (error: AxiosError) => {
     const original = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined
-    // 로그인/가입/refresh 자체의 401(잘못된 비밀번호 등)은 재발급 대상이 아니다
-    const isAuthRequest = original?.url?.includes('/api/v1/auth/') ?? false
+    const isAuthRequest = AUTH_PATHS.has((original?.url ?? '').split('?')[0])
     if (error.response?.status !== 401 || !original || original._retry || isAuthRequest) {
       return Promise.reject(error)
     }
 
     original._retry = true
     try {
-      refreshing ??= refreshAccessToken().finally(() => {
-        refreshing = null
-      })
-      const accessToken = await refreshing
+      const accessToken = await refreshSession()
       original.headers.Authorization = `Bearer ${accessToken}`
       return client(original)
-    } catch (refreshError) {
-      // refresh 토큰이 없거나 만료/무효일 때만 로그아웃한다. 네트워크 오류·5xx 같은 일시 장애로는 로그아웃하지 않는다
-      const status = axios.isAxiosError(refreshError) ? refreshError.response?.status : undefined
-      if (!axios.isAxiosError(refreshError) || status === 401 || status === 403) {
-        useAuthStore.getState().logout()
-      }
+    } catch {
       return Promise.reject(error)
     }
   },

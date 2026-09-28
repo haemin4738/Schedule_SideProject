@@ -76,6 +76,15 @@ class EventControllerTest {
     }
 
     @Test
+    void list_withInvalidToken_returnsUnauthorized() throws Exception {
+        when(jwtTokenProvider.validate("forged.token.value")).thenReturn(false);
+
+        mockMvc.perform(get("/api/v1/events").header("Authorization", "Bearer forged.token.value"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("인증이 필요합니다."));
+    }
+
+    @Test
     void list_withoutAuthentication_returnsUnauthorized() throws Exception {
         // 토큰 없음/만료 → 401 (클라이언트가 refresh 토큰 재발급을 시도하는 기준)
         mockMvc.perform(get("/api/v1/events"))

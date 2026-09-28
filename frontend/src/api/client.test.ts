@@ -113,6 +113,20 @@ describe('api client 401 처리', () => {
     expect(useAuthStore.getState().accessToken).toBe('expired-access')
   })
 
+  it('쿼리스트링이 붙은 일반 요청도 인증 경로로 오인하지 않고 refresh한다', async () => {
+    adapter.mockImplementation(async (config) => {
+      if (config.headers.Authorization === 'Bearer new-access') return ok(config, {})
+      throw unauthorized(config)
+    })
+    const refresh = vi.spyOn(axios, 'post').mockResolvedValue({
+      data: { data: { accessToken: 'new-access', refreshToken: 'new-refresh' } },
+    })
+
+    await client.get('/api/v1/events?redirect=/api/v1/auth/login')
+
+    expect(refresh).toHaveBeenCalledTimes(1)
+  })
+
   it('403(권한 없음)은 refresh 없이 그대로 에러를 반환한다', async () => {
     adapter.mockImplementation(async (config) => {
       throw new AxiosError('Forbidden', 'ERR_BAD_REQUEST', config, null, {
