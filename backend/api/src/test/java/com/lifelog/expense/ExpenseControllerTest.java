@@ -1,6 +1,6 @@
 package com.lifelog.expense;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.domain.expense.ExpenseType;
 import com.lifelog.expense.dto.CategorySummaryResponse;
@@ -12,8 +12,8 @@ import com.lifelog.security.JwtTokenProvider;
 import com.lifelog.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageImpl;
@@ -50,13 +50,13 @@ class ExpenseControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private ExpenseService expenseService;
 
-    @MockBean
+    @MockitoBean
     private ExpenseSummaryService expenseSummaryService;
 
-    @MockBean
+    @MockitoBean
     private JwtTokenProvider jwtTokenProvider;
 
     private RequestPostProcessor asUser() {

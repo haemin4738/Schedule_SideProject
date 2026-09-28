@@ -1,6 +1,6 @@
 package com.lifelog.event;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.domain.event.EventCategory;
 import com.lifelog.event.dto.EventRequest;
@@ -9,9 +9,10 @@ import com.lifelog.event.dto.EventSummary;
 import com.lifelog.security.JwtTokenProvider;
 import com.lifelog.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -22,10 +23,13 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -43,11 +47,11 @@ class EventControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private EventService eventService;
 
     // SecurityConfig가 요구하는 빈 (실제 필터체인 로드를 위해 필요)
-    @MockBean
+    @MockitoBean
     private JwtTokenProvider jwtTokenProvider;
 
     private static final Long USER_ID = 1L;
@@ -123,6 +127,50 @@ class EventControllerTest {
                 .andExpect(jsonPath("$.data.id").value(1))
                 .andExpect(jsonPath("$.data.title").value("팀 회의"))
                 .andExpect(jsonPath("$.error").doesNotExist());
+    }
+
+    @Test
+    void create_whenAllDayOmitted_returns201WithAllDayFalse() throws Exception {
+        when(eventService.create(any(), any())).thenReturn(sampleResponse());
+
+        // 클라이언트가 primitive 필드(allDay)를 생략해도 기본값(false)으로 처리되어야 한다 (spring.jackson.use-jackson2-defaults)
+        mockMvc.perform(post("/api/v1/events").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"팀 회의\",\"startAt\":\"2026-01-10T10:00:00\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true));
+
+        ArgumentCaptor<EventRequest> captor = ArgumentCaptor.forClass(EventRequest.class);
+        verify(eventService).create(any(), captor.capture());
+        assertThat(captor.getValue().allDay()).isFalse();
+    }
+
+    @Test
+    void create_whenUnknownFieldIncluded_ignoresItAndReturns201() throws Exception {
+        when(eventService.create(any(), any())).thenReturn(sampleResponse());
+
+        mockMvc.perform(post("/api/v1/events").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"팀 회의\",\"startAt\":\"2026-01-10T10:00:00\",\"unknownField\":1}"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void create_whenCalled_serializesResponseInClientContractFormat() throws Exception {
+        when(eventService.create(any(), any())).thenReturn(sampleResponse());
+
+        // React/Flutter 클라이언트 계약: 날짜는 ISO 문자열, null 필드(error)도 키로 포함, 필드는 선언 순서
+        String body = mockMvc.perform(post("/api/v1/events").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validRequest())))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+        assertThat(body)
+                .startsWith("{\"success\":true,\"data\":{\"id\":1,\"title\":\"팀 회의\"")
+                .contains("\"startAt\":\"2026-01-10T10:00:00\"")
+                .contains("\"createdAt\":\"2026-01-01T00:00:00\"")
+                .endsWith("\"error\":null}");
     }
 
     @Test
