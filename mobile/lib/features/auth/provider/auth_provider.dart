@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:mobile/core/network/dio_client.dart';
 
 class AuthState {
   final String? accessToken;
@@ -10,7 +11,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final _storage = const FlutterSecureStorage();
 
   AuthNotifier() : super(const AuthState()) {
+    // refresh 실패로 세션이 만료되면 로그인 화면으로 돌아가도록 상태를 비운다 (토큰은 dio_client가 삭제)
+    onSessionExpired = _onSessionExpired;
     _init();
+  }
+
+  void _onSessionExpired() {
+    if (mounted) state = const AuthState();
+  }
+
+  @override
+  void dispose() {
+    // 다른 인스턴스가 등록한 콜백은 건드리지 않는다
+    if (onSessionExpired == _onSessionExpired) onSessionExpired = null;
+    super.dispose();
   }
 
   Future<void> _init() async {
