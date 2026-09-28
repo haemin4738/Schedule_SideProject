@@ -13,6 +13,9 @@ spring:
       hibernate:
         format_sql: true
         default_batch_fetch_size: 100
+  jackson:
+    # Boot 4 기본 Jackson 3는 기본값이 달라(누락된 primitive 필드 거부 등) 기존 클라이언트 요청이 400이 된다 → Jackson 2 기본값 유지
+    use-jackson2-defaults: true
   data:
     redis:
       host: ${REDIS_HOST:localhost}

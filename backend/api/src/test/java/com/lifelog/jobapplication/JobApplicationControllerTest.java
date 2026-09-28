@@ -1,6 +1,6 @@
 package com.lifelog.jobapplication;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.domain.jobapplication.JobApplicationStatus;
 import com.lifelog.jobapplication.dto.JobApplicationRequest;
@@ -10,8 +10,8 @@ import com.lifelog.security.JwtTokenProvider;
 import com.lifelog.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -44,11 +44,11 @@ class JobApplicationControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private JobApplicationService jobApplicationService;
 
     // SecurityConfig가 요구하는 빈 (실제 필터체인 로드를 위해 필요)
-    @MockBean
+    @MockitoBean
     private JwtTokenProvider jwtTokenProvider;
 
     private static final Long USER_ID = 1L;

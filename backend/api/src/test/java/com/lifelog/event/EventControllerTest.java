@@ -1,6 +1,6 @@
 package com.lifelog.event;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.domain.event.EventCategory;
 import com.lifelog.event.dto.EventRequest;
@@ -10,8 +10,8 @@ import com.lifelog.security.JwtTokenProvider;
 import com.lifelog.security.SecurityConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -43,11 +43,11 @@ class EventControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private EventService eventService;
 
     // SecurityConfig가 요구하는 빈 (실제 필터체인 로드를 위해 필요)
-    @MockBean
+    @MockitoBean
     private JwtTokenProvider jwtTokenProvider;
 
     private static final Long USER_ID = 1L;
@@ -123,6 +123,18 @@ class EventControllerTest {
                 .andExpect(jsonPath("$.data.id").value(1))
                 .andExpect(jsonPath("$.data.title").value("팀 회의"))
                 .andExpect(jsonPath("$.error").doesNotExist());
+    }
+
+    @Test
+    void create_whenAllDayOmitted_returns201() throws Exception {
+        when(eventService.create(any(), any())).thenReturn(sampleResponse());
+
+        // 클라이언트가 primitive 필드(allDay)를 생략해도 기본값(false)으로 처리되어야 한다
+        mockMvc.perform(post("/api/v1/events").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"팀 회의\",\"startAt\":\"2026-01-10T10:00:00\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true));
     }
 
     @Test

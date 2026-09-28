@@ -26,7 +26,7 @@ class GlobalExceptionHandlerTest {
 
         @GetMapping("/test/no-resource")
         void noResource() throws NoResourceFoundException {
-            throw new NoResourceFoundException(HttpMethod.GET, "test/missing");
+            throw new NoResourceFoundException(HttpMethod.GET, "/test/missing", "test/missing");
         }
 
         @GetMapping("/test/method-not-supported")
