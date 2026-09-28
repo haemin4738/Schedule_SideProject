@@ -973,6 +973,7 @@ components:
         memo:
           type: string
           nullable: true
+          maxLength: 10000
 
     ExpenseResponse:
       type: object

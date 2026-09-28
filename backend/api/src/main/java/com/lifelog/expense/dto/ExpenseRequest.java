@@ -26,5 +26,6 @@ public record ExpenseRequest(
         @Size(max = 200, message = "설명은 200자 이하여야 합니다.")
         String description,
 
+        @Size(max = 10_000, message = "메모는 10,000자 이하여야 합니다.")
         String memo
 ) {}

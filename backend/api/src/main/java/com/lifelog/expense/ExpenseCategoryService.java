@@ -54,7 +54,8 @@ public class ExpenseCategoryService {
     public ExpenseCategoryResponse update(Long userId, Long id, ExpenseCategoryUpdateRequest request) {
         ExpenseCategory category = getOwnedCategory(id, userId);
         String name = request.name().trim();
-        if (!name.equals(category.getName())
+        // DB collation(utf8mb4_unicode_ci)이 대소문자를 구분하지 않으므로, 대소문자만 바꾸는 경우 자기 자신이 중복으로 잡히지 않게 한다
+        if (!name.equalsIgnoreCase(category.getName())
                 && expenseCategoryRepository.existsByUserIdAndTypeAndName(userId, category.getType(), name)) {
             throw BusinessException.conflict("이미 존재하는 카테고리입니다.");
         }
