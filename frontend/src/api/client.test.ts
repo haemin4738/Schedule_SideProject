@@ -86,12 +86,31 @@ describe('api client 401 처리', () => {
     adapter.mockImplementation(async (config) => {
       throw unauthorized(config)
     })
-    vi.spyOn(axios, 'post').mockRejectedValue(new Error('refresh expired'))
+    vi.spyOn(axios, 'post').mockRejectedValue(
+      new AxiosError('Unauthorized', 'ERR_BAD_REQUEST', undefined, null, {
+        status: 401,
+        statusText: 'Unauthorized',
+        data: {},
+        headers: {},
+        config: {} as InternalAxiosRequestConfig,
+      }),
+    )
 
     await expect(client.get('/api/v1/events')).rejects.toMatchObject({ response: { status: 401 } })
     expect(localStorage.getItem('accessToken')).toBeNull()
     expect(localStorage.getItem('refreshToken')).toBeNull()
     expect(useAuthStore.getState().accessToken).toBeNull()
+  })
+
+  it('refresh가 네트워크 오류로 실패하면 로그아웃하지 않는다', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockRejectedValue(new AxiosError('Network Error', 'ERR_NETWORK'))
+
+    await expect(client.get('/api/v1/events')).rejects.toMatchObject({ response: { status: 401 } })
+    expect(localStorage.getItem('refreshToken')).toBe('valid-refresh')
+    expect(useAuthStore.getState().accessToken).toBe('expired-access')
   })
 
   it('403(권한 없음)은 refresh 없이 그대로 에러를 반환한다', async () => {

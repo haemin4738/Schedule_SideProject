@@ -44,9 +44,12 @@ client.interceptors.response.use(
       const accessToken = await refreshing
       original.headers.Authorization = `Bearer ${accessToken}`
       return client(original)
-    } catch {
-      // refresh 토큰도 만료/무효 → 로그아웃 처리 (저장된 토큰 삭제, 로그인 화면으로 유도)
-      useAuthStore.getState().logout()
+    } catch (refreshError) {
+      // refresh 토큰이 없거나 만료/무효일 때만 로그아웃한다. 네트워크 오류·5xx 같은 일시 장애로는 로그아웃하지 않는다
+      const status = axios.isAxiosError(refreshError) ? refreshError.response?.status : undefined
+      if (!axios.isAxiosError(refreshError) || status === 401 || status === 403) {
+        useAuthStore.getState().logout()
+      }
       return Promise.reject(error)
     }
   },

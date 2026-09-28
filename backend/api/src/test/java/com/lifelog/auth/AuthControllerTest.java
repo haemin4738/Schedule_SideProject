@@ -2,6 +2,7 @@ package com.lifelog.auth;
 
 import com.lifelog.auth.dto.LoginRequest;
 import com.lifelog.auth.dto.SignupRequest;
+import com.lifelog.auth.dto.TokenResponse;
 import com.lifelog.auth.dto.UserResponse;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.security.JwtTokenProvider;
@@ -89,6 +90,18 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error").value("비밀번호는 영문, 숫자, 특수문자를 각각 1자 이상 포함한 9~15자여야 합니다."));
         verify(authService, never()).signup(any());
+    }
+
+    @Test
+    void login_whenLegacyPasswordNotMatchingSignupPolicy_passesValidationToService() throws Exception {
+        when(authService.login(any())).thenReturn(TokenResponse.of("access", "refresh"));
+
+        // 가입 정책(9~15자, 영문/숫자/특수문자)은 가입에만 적용 — 이전 규칙(8자 이상)으로 가입한 계정도 로그인 가능해야 한다
+        mockMvc.perform(post(BASE + "/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest("user@test.com", "password"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.accessToken").value("access"));
     }
 
     @Test

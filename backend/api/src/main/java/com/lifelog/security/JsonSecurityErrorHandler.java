@@ -4,6 +4,7 @@ import com.lifelog.common.dto.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
@@ -28,12 +29,16 @@ public class JsonSecurityErrorHandler implements AuthenticationEntryPoint, Acces
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
                          AuthenticationException authException) throws IOException {
+        if (response.isCommitted()) return;
+        // RFC 9110 §15.5.2 / RFC 6750 §3: 401 응답은 인증 방식을 알리는 challenge 헤더를 포함해야 한다
+        response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
         write(response, HttpStatus.UNAUTHORIZED, "인증이 필요합니다.");
     }
 
     @Override
     public void handle(HttpServletRequest request, HttpServletResponse response,
                        AccessDeniedException accessDeniedException) throws IOException {
+        if (response.isCommitted()) return;
         write(response, HttpStatus.FORBIDDEN, "접근 권한이 없습니다.");
     }
 

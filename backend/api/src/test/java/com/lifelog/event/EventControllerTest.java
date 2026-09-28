@@ -80,6 +80,7 @@ class EventControllerTest {
         // 토큰 없음/만료 → 401 (클라이언트가 refresh 토큰 재발급을 시도하는 기준)
         mockMvc.perform(get("/api/v1/events"))
                 .andExpect(status().isUnauthorized())
+                .andExpect(header().string("WWW-Authenticate", "Bearer"))
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error").value("인증이 필요합니다."));
     }

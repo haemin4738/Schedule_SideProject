@@ -108,6 +108,16 @@ void main() {
     expect(sessionExpired, isTrue);
   });
 
+  test('refresh가 서버 오류(5xx)로 실패하면 세션을 만료하지 않는다', () async {
+    refreshAdapter = _FakeAdapter((_) => _json(503, {'success': false}));
+    refreshDio.httpClientAdapter = refreshAdapter;
+    final api = _FakeAdapter((_) => _unauthorized());
+
+    await expectLater(dioWith(api).get('/api/v1/events'), throwsA(isA<DioException>()));
+    expect(await storage.read(key: 'refreshToken'), 'valid-refresh');
+    expect(sessionExpired, isFalse);
+  });
+
   test('403(권한 없음)은 refresh 없이 그대로 에러를 반환한다', () async {
     final api = _FakeAdapter((_) => _json(403, {'success': false, 'data': null, 'error': '접근 권한이 없습니다.'}));
 

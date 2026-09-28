@@ -12,8 +12,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   AuthNotifier() : super(const AuthState()) {
     // refresh 실패로 세션이 만료되면 로그인 화면으로 돌아가도록 상태를 비운다 (토큰은 dio_client가 삭제)
-    onSessionExpired = () => state = const AuthState();
+    onSessionExpired = _onSessionExpired;
     _init();
+  }
+
+  void _onSessionExpired() {
+    if (mounted) state = const AuthState();
+  }
+
+  @override
+  void dispose() {
+    // 다른 인스턴스가 등록한 콜백은 건드리지 않는다
+    if (onSessionExpired == _onSessionExpired) onSessionExpired = null;
+    super.dispose();
   }
 
   Future<void> _init() async {

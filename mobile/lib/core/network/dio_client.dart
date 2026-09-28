@@ -51,8 +51,13 @@ Dio createDio({
       try {
         refreshing ??= refreshAccessToken().whenComplete(() => refreshing = null);
         accessToken = await refreshing!;
+      } on DioException catch (refreshError) {
+        // refresh 토큰이 만료/무효일 때만 세션을 만료한다. 네트워크 오류·5xx 같은 일시 장애로는 로그아웃하지 않는다
+        final status = refreshError.response?.statusCode;
+        if (status == 401 || status == 403) await _expireSession(storage);
+        return handler.next(error);
       } catch (_) {
-        // refresh 토큰도 만료/무효 → 저장된 토큰 삭제 후 로그인 화면으로
+        // 저장된 refresh 토큰 없음 → 재로그인 필요
         await _expireSession(storage);
         return handler.next(error);
       }
