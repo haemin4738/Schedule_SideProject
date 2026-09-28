@@ -136,6 +136,26 @@ class ExpenseCategoryRepositoryImplTest {
     }
 
     @Test
+    void existsByUserIdAndTypeAndNameAndIdNot_whenOnlySelfMatchesByCollation_returnsFalse() {
+        ExpenseCategory cafe = save(user1, ExpenseType.EXPENSE, "cafe");
+        entityManager.flush();
+
+        // utf8mb4_unicode_ci는 대소문자/악센트를 구분하지 않으므로 자기 자신만 매칭된다
+        assertThat(categoryRepository.existsByUserIdAndTypeAndNameAndIdNot(
+                user1.getId(), ExpenseType.EXPENSE, "Café", cafe.getId())).isFalse();
+    }
+
+    @Test
+    void existsByUserIdAndTypeAndNameAndIdNot_whenOtherCategoryMatches_returnsTrue() {
+        ExpenseCategory food = save(user1, ExpenseType.EXPENSE, "식비");
+        save(user1, ExpenseType.EXPENSE, "cafe");
+        entityManager.flush();
+
+        assertThat(categoryRepository.existsByUserIdAndTypeAndNameAndIdNot(
+                user1.getId(), ExpenseType.EXPENSE, "Café", food.getId())).isTrue();
+    }
+
+    @Test
     void countByUserId_whenCalled_countsOnlyOwnCategories() {
         save(user1, ExpenseType.EXPENSE, "식비");
         save(user1, ExpenseType.INCOME, "급여");

@@ -133,7 +133,7 @@ class ExpenseCategoryServiceTest {
     void update_whenNewName_checksDuplicateAndRenames() {
         ExpenseCategory food = category(10L, owner, ExpenseType.EXPENSE, "식비");
         when(expenseCategoryRepository.findById(10L)).thenReturn(Optional.of(food));
-        when(expenseCategoryRepository.existsByUserIdAndTypeAndName(1L, ExpenseType.EXPENSE, "외식")).thenReturn(false);
+        when(expenseCategoryRepository.existsByUserIdAndTypeAndNameAndIdNot(1L, ExpenseType.EXPENSE, "외식", 10L)).thenReturn(false);
         when(expenseCategoryRepository.save(food)).thenReturn(food);
 
         ExpenseCategoryResponse response = service.update(1L, 10L, new ExpenseCategoryUpdateRequest(" 외식 "));
@@ -151,26 +151,27 @@ class ExpenseCategoryServiceTest {
         ExpenseCategoryResponse response = service.update(1L, 10L, new ExpenseCategoryUpdateRequest("식비 "));
 
         assertThat(response.name()).isEqualTo("식비");
-        verify(expenseCategoryRepository, never()).existsByUserIdAndTypeAndName(any(), any(), any());
+        verify(expenseCategoryRepository, never()).existsByUserIdAndTypeAndNameAndIdNot(any(), any(), any(), any());
     }
 
     @Test
-    void update_whenOnlyCaseChanged_skipsDuplicateCheck() {
+    void update_whenOnlyCaseChanged_checksDuplicateExcludingSelfAndRenames() {
         ExpenseCategory food = category(10L, owner, ExpenseType.EXPENSE, "food");
         when(expenseCategoryRepository.findById(10L)).thenReturn(Optional.of(food));
+        when(expenseCategoryRepository.existsByUserIdAndTypeAndNameAndIdNot(1L, ExpenseType.EXPENSE, "Food", 10L)).thenReturn(false);
         when(expenseCategoryRepository.save(food)).thenReturn(food);
 
         ExpenseCategoryResponse response = service.update(1L, 10L, new ExpenseCategoryUpdateRequest("Food"));
 
         assertThat(response.name()).isEqualTo("Food");
-        verify(expenseCategoryRepository, never()).existsByUserIdAndTypeAndName(any(), any(), any());
+        verify(expenseCategoryRepository).existsByUserIdAndTypeAndNameAndIdNot(1L, ExpenseType.EXPENSE, "Food", 10L);
     }
 
     @Test
     void update_whenDuplicateName_throwsConflict() {
         ExpenseCategory food = category(10L, owner, ExpenseType.EXPENSE, "식비");
         when(expenseCategoryRepository.findById(10L)).thenReturn(Optional.of(food));
-        when(expenseCategoryRepository.existsByUserIdAndTypeAndName(1L, ExpenseType.EXPENSE, "교통")).thenReturn(true);
+        when(expenseCategoryRepository.existsByUserIdAndTypeAndNameAndIdNot(1L, ExpenseType.EXPENSE, "교통", 10L)).thenReturn(true);
 
         assertThatThrownBy(() -> service.update(1L, 10L, new ExpenseCategoryUpdateRequest("교통")))
                 .isInstanceOf(BusinessException.class)

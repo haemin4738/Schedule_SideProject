@@ -18,5 +18,7 @@ interface ExpenseCategoryJpaRepository extends JpaRepository<ExpenseCategory, Lo
 
     boolean existsByUserIdAndTypeAndName(Long userId, ExpenseType type, String name);
 
+    boolean existsByUserIdAndTypeAndNameAndIdNot(Long userId, ExpenseType type, String name, Long id);
+
     long countByUserId(Long userId);
 }

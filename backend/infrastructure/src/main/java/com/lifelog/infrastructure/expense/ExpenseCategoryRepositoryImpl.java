@@ -30,6 +30,11 @@ public class ExpenseCategoryRepositoryImpl implements ExpenseCategoryRepository 
     }
 
     @Override
+    public boolean existsByUserIdAndTypeAndNameAndIdNot(Long userId, ExpenseType type, String name, Long id) {
+        return jpa.existsByUserIdAndTypeAndNameAndIdNot(userId, type, name, id);
+    }
+
+    @Override
     public long countByUserId(Long userId) {
         return jpa.countByUserId(userId);
     }

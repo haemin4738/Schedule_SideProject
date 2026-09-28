@@ -309,6 +309,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponse_Error'
+        '404':
+          description: 사용자 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
         '409':
           description: 같은 유형 내 이름 중복 또는 사용자당 카테고리 100개 초과
           content:
@@ -489,6 +495,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponse_Error'
+        '409':
+          description: 처리 중 카테고리가 동시에 삭제되어 데이터 제약 조건과 충돌
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
 
   /expenses/{id}:
     parameters:
@@ -553,6 +565,12 @@ paths:
                 $ref: '#/components/schemas/ApiResponse_Error'
         '404':
           description: 내역 또는 카테고리 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '409':
+          description: 처리 중 카테고리가 동시에 삭제되어 데이터 제약 조건과 충돌
           content:
             application/json:
               schema:

@@ -16,6 +16,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.sql.SQLException;
+
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -65,7 +67,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(DataIntegrityViolationException e) {
         // SQL/바인딩 값이 포함될 수 있으므로 원인 예외 타입만 기록한다.
-        log.warn("Data integrity violation: {}", e.getMostSpecificCause().getClass().getSimpleName());
+        Throwable cause = e.getMostSpecificCause();
+        log.warn("Data integrity violation: {}", cause.getClass().getSimpleName());
+        // SQLState 22xxx(data exception: 길이 초과, 범위 밖 날짜 등)는 제약 충돌이 아니라 잘못된 입력이다
+        if (cause instanceof SQLException sqlException
+                && sqlException.getSQLState() != null && sqlException.getSQLState().startsWith("22")) {
+            return ResponseEntity.badRequest().body(ApiResponse.error("요청 값이 허용 범위를 벗어났습니다."));
+        }
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiResponse.error("데이터 제약 조건과 충돌하는 요청입니다."));
     }
@@ -79,7 +87,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleMethodNotSupported(HttpRequestMethodNotSupportedException e) {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
                 .headers(e.getHeaders())
-                .body(ApiResponse.error("지원하지 않는 HTTP 메서드입니다: " + e.getMethod()));
+                .body(ApiResponse.error("지원하지 않는 HTTP 메서드입니다."));
     }
 
     @ExceptionHandler(Exception.class)
