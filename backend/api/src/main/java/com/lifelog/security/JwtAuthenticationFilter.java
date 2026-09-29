@@ -24,12 +24,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
         String token = resolveToken(request);
 
-        if (StringUtils.hasText(token) && tokenProvider.validate(token)) {
-            Long userId = tokenProvider.getUserId(token);
-            UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
-                    userId, null, List.of(new SimpleGrantedAuthority("ROLE_USER"))
-            );
-            SecurityContextHolder.getContext().setAuthentication(auth);
+        if (StringUtils.hasText(token)) {
+            tokenProvider.resolveAccessUserId(token).ifPresent(userId -> {
+                UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                        userId, null, List.of(new SimpleGrantedAuthority("ROLE_USER"))
+                );
+                SecurityContextHolder.getContext().setAuthentication(auth);
+            });
         }
 
         filterChain.doFilter(request, response);
