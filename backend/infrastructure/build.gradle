@@ -4,7 +4,11 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'tools.jackson.core:jackson-databind'
+    // 소셜 로그인: 제공자 API 호출(RestClient) + 구글 id_token 서명 검증(NimbusJwtDecoder/JWKS)
+    implementation 'org.springframework.boot:spring-boot-starter-restclient'
+    implementation 'org.springframework.security:spring-security-oauth2-jose'
     runtimeOnly 'com.mysql:mysql-connector-j'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-restclient-test'
 }

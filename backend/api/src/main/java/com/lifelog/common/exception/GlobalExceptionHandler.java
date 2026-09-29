@@ -1,6 +1,7 @@
 package com.lifelog.common.exception;
 
 import com.lifelog.common.dto.ApiResponse;
+import com.lifelog.domain.user.social.SocialAuthException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -25,6 +26,24 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException e) {
         return ResponseEntity.status(e.getStatus()).body(ApiResponse.error(e.getMessage()));
+    }
+
+    @ExceptionHandler(SocialAuthException.class)
+    public ResponseEntity<ApiResponse<Void>> handleSocialAuth(SocialAuthException e) {
+        // 예외 메시지에 제공자 응답이 담길 수 있으므로 reason 과 예외 타입만 기록하고, 응답은 고정 문구로 한다
+        SocialAuthException.Reason reason = e.getReason();
+        String causeType = e.getCause() != null ? e.getCause().getClass().getSimpleName() : "none";
+        log.warn("Social auth failed: reason={}, cause={}", reason, causeType);
+        return switch (reason) {
+            case INVALID_CREDENTIAL -> ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(ApiResponse.error("소셜 로그인 인증에 실패했습니다. 다시 시도해 주세요."));
+            case INVALID_REQUEST -> ResponseEntity.badRequest()
+                    .body(ApiResponse.error("지원하지 않는 소셜 로그인 요청입니다."));
+            case PROVIDER_UNAVAILABLE -> ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                    .body(ApiResponse.error("소셜 로그인 제공자와 통신하지 못했습니다. 잠시 후 다시 시도해 주세요."));
+            case SERVICE_UNAVAILABLE -> ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(ApiResponse.error("소셜 로그인을 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요."));
+        };
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

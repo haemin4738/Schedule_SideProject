@@ -34,7 +34,8 @@ public class AuthService {
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow(() -> BusinessException.unauthorized("이메일 또는 비밀번호가 올바르지 않습니다."));
 
-        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+        // 소셜 전용 회원(비밀번호 없음)도 같은 메시지로 거부해 가입 경로를 노출하지 않는다
+        if (!user.hasPassword() || !passwordEncoder.matches(request.password(), user.getPassword())) {
             throw BusinessException.unauthorized("이메일 또는 비밀번호가 올바르지 않습니다.");
         }
 

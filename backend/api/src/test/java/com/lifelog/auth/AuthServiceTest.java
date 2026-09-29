@@ -6,6 +6,7 @@ import com.lifelog.auth.dto.TokenResponse;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.domain.user.User;
 import com.lifelog.domain.user.UserRepository;
+import com.lifelog.domain.user.social.SocialProvider;
 import com.lifelog.security.JwtTokenProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,6 +14,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
@@ -20,6 +22,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -46,6 +49,47 @@ class AuthServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getStatus())
                 .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void login_whenSocialOnlyUser_throwsSameUnauthorizedWithoutMatching() {
+        PasswordEncoder mockEncoder = mock(PasswordEncoder.class);
+        AuthService authService = new AuthService(userRepository, mockEncoder, tokenProvider);
+        User socialOnly = User.createSocial("social@test.com", "소셜", SocialProvider.KAKAO);
+        when(userRepository.findByEmail("social@test.com")).thenReturn(Optional.of(socialOnly));
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("social@test.com", "anything")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("이메일 또는 비밀번호가 올바르지 않습니다.")
+                .extracting(e -> ((BusinessException) e).getStatus())
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
+        verify(mockEncoder, never()).matches(any(), any());
+        verify(tokenProvider, never()).createAccessToken(any());
+    }
+
+    @Test
+    void login_whenUnknownEmail_throwsSameUnauthorizedMessage() {
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenProvider);
+        when(userRepository.findByEmail("none@test.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("none@test.com", "pw")))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("이메일 또는 비밀번호가 올바르지 않습니다.");
+    }
+
+    @Test
+    void login_whenLocalUserWithCorrectPassword_issuesTokens() {
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenProvider);
+        User user = User.create("user@test.com", passwordEncoder.encode("correct-password"), "사용자");
+        ReflectionTestUtils.setField(user, "id", 1L);
+        when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
+        when(tokenProvider.createAccessToken(1L)).thenReturn("access");
+        when(tokenProvider.createRefreshToken(1L)).thenReturn("refresh");
+
+        TokenResponse response = authService.login(new LoginRequest("user@test.com", "correct-password"));
+
+        assertThat(response.accessToken()).isEqualTo("access");
+        assertThat(response.refreshToken()).isEqualTo("refresh");
     }
 
     @Test
