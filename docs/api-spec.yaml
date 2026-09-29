@@ -10,7 +10,7 @@ servers:
 
 tags:
   - name: auth
-    description: 인증 (회원가입 / 로그인 / 토큰 재발급 / 로그아웃)
+    description: 인증 (회원가입 / 로그인 / 소셜 로그인 / 토큰 재발급 / 로그아웃)
   - name: events
     description: 일정 관리 CRUD
   - name: expense-categories
@@ -116,6 +116,145 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponse_Empty'
+
+  /auth/social/{provider}/login:
+    post:
+      tags: [auth]
+      summary: 소셜 로그인 (카카오 / 네이버 / 구글)
+      description: |
+        클라이언트가 제공자에게서 받은 자격증명을 넘기면 백엔드가 제공자에 검증한 뒤 결과를 반환한다.
+        결과는 HTTP 200 고정이며 `data.status` 로 분기한다.
+        - `LOGGED_IN`: `data.token` 에 access/refresh 토큰. 처음 가입이면 `newUser: true`.
+        - `LINK_REQUIRED`: 같은 이메일의 일반 회원이 있어 비밀번호 확인이 필요하다. `data.link.linkToken` 과 비밀번호로 `/auth/social/link` 를 호출한다.
+
+        grantType 별 필수값 (누락 시 400):
+        - `AUTHORIZATION_CODE`: code, redirectUri (codeVerifier, nonce, state 선택 — **네이버는 state 필수**). redirectUri 는 서버 허용 목록과 정확히 일치해야 한다.
+        - `ACCESS_TOKEN`: accessToken — 카카오만 허용
+        - `ID_TOKEN`: idToken (nonce 선택) — 구글만 허용
+      security: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          description: 대소문자 무시. 그 외 값은 400.
+          schema:
+            type: string
+            enum: [kakao, naver, google]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialLoginRequest'
+      responses:
+        '200':
+          description: 로그인 성공(LOGGED_IN) 또는 계정 연결 필요(LINK_REQUIRED)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_SocialLoginResponse'
+        '400':
+          description: 지원하지 않는 provider, grantType 별 필수값 누락, 제공자가 허용하지 않는 grantType, 허용 목록 밖 redirectUri, 인증된 이메일 미제공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '401':
+          description: 제공자 자격증명이 유효하지 않음 (만료/위조/audience 불일치 등)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '409':
+          description: 다른 소셜 로그인으로 가입된 이메일, 같은 제공자의 다른 계정이 이미 연결된 회원, 동시 가입 충돌
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '502':
+          description: 제공자 서버 오류 또는 타임아웃
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '503':
+          description: 해당 제공자 설정이 없어 일시적으로 사용할 수 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+
+  /auth/social/link:
+    post:
+      tags: [auth]
+      summary: 소셜 계정 연결 (LINK_REQUIRED 후 비밀번호 확인)
+      description: |
+        소셜 로그인에서 받은 1회용 linkToken(유효 10분)과 기존 회원 비밀번호를 제출하면 소셜 계정을 연결하고 토큰을 발급한다.
+        비밀번호를 5회 틀리면 linkToken 이 폐기되며, 소셜 로그인부터 다시 시도해야 한다.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SocialLinkRequest'
+      responses:
+        '200':
+          description: 연결 성공 — access/refresh 토큰 반환
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_TokenResponse'
+        '400':
+          description: 필수값 누락 또는 길이 초과 (linkToken·password 각 최대 128자)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '401':
+          description: linkToken 만료/사용됨, 비밀번호 불일치, 시도 횟수 초과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '409':
+          description: 그 사이 해당 소셜 계정 또는 같은 제공자 계정이 이미 연결됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '503':
+          description: 연결 대기 저장소(Redis) 장애
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+
+  /auth/social/naver/app-callback:
+    get:
+      tags: [auth]
+      summary: 네이버 로그인 iOS 앱 콜백 (리다이렉트 전용)
+      description: |
+        iOS 앱의 네이버 로그인 redirect_uri. 쿼리의 code, state, error 만 URL 인코딩해
+        서버 설정(`oauth.naver.app-callback-target`, 예 `lifelog://oauth/naver`)으로 고정된 대상에 302 리다이렉트한다.
+        요청 값으로 리다이렉트 대상이 바뀌지 않는다. 응답 envelope 을 쓰지 않으며
+        `Cache-Control: no-store`, `Referrer-Policy: no-referrer` 헤더를 붙인다.
+        앱은 받은 code 로 `/auth/social/naver/login` (AUTHORIZATION_CODE) 을 호출한다.
+      security: []
+      parameters:
+        - { name: code, in: query, required: false, schema: { type: string } }
+        - { name: state, in: query, required: false, schema: { type: string } }
+        - { name: error, in: query, required: false, schema: { type: string } }
+      responses:
+        '302':
+          description: 앱 딥링크로 리다이렉트
+          headers:
+            Location:
+              schema: { type: string, example: 'lifelog://oauth/naver?code=abc&state=xyz' }
+            Cache-Control:
+              schema: { type: string, example: no-store }
+            Referrer-Policy:
+              schema: { type: string, example: no-referrer }
 
   # ================================================================
   # EVENTS
@@ -709,6 +848,14 @@ components:
           $ref: '#/components/schemas/TokenResponse'
         error: { type: string, nullable: true, example: null }
 
+    ApiResponse_SocialLoginResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          $ref: '#/components/schemas/SocialLoginResponse'
+        error: { type: string, nullable: true, example: null }
+
     ApiResponse_EventResponse:
       type: object
       properties:
@@ -862,6 +1009,91 @@ components:
         tokenType:
           type: string
           example: Bearer
+
+    SocialLoginRequest:
+      type: object
+      required: [grantType]
+      properties:
+        grantType:
+          type: string
+          enum: [AUTHORIZATION_CODE, ACCESS_TOKEN, ID_TOKEN]
+        code:
+          type: string
+          maxLength: 2048
+          description: AUTHORIZATION_CODE 필수
+        redirectUri:
+          type: string
+          maxLength: 2048
+          description: AUTHORIZATION_CODE 필수. 인가 요청에 사용한 값과 동일해야 한다.
+          example: http://localhost:5173/oauth/callback/google
+        codeVerifier:
+          type: string
+          maxLength: 128
+          description: PKCE 사용 시
+        nonce:
+          type: string
+          maxLength: 512
+          description: 구글 id_token nonce 검증용 (선택)
+        state:
+          type: string
+          maxLength: 512
+          description: 클라이언트가 콜백에서 대조를 마친 state. AUTHORIZATION_CODE + 네이버는 필수
+        accessToken:
+          type: string
+          maxLength: 8192
+          description: ACCESS_TOKEN 필수 (카카오 SDK)
+        idToken:
+          type: string
+          maxLength: 8192
+          description: ID_TOKEN 필수 (구글 SDK)
+
+    SocialLoginResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [LOGGED_IN, LINK_REQUIRED]
+        newUser:
+          type: boolean
+          description: 이번 요청으로 가입했으면 true
+        token:
+          allOf:
+            - $ref: '#/components/schemas/TokenResponse'
+          nullable: true
+          description: LOGGED_IN 일 때만 존재
+        link:
+          allOf:
+            - $ref: '#/components/schemas/SocialLinkInfo'
+          nullable: true
+          description: LINK_REQUIRED 일 때만 존재
+
+    SocialLinkInfo:
+      type: object
+      properties:
+        linkToken:
+          type: string
+          description: 1회용 opaque 토큰
+        provider:
+          type: string
+          enum: [KAKAO, NAVER, GOOGLE]
+        maskedEmail:
+          type: string
+          example: le***@gmail.com
+        expiresInSeconds:
+          type: integer
+          format: int64
+          example: 600
+
+    SocialLinkRequest:
+      type: object
+      required: [linkToken, password]
+      properties:
+        linkToken:
+          type: string
+          maxLength: 128
+        password:
+          type: string
+          maxLength: 128
 
     # ── Events ──────────────────────────────────────────────────────
     EventRequest:
