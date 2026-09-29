@@ -6,10 +6,12 @@ import com.lifelog.domain.user.User;
 import com.lifelog.domain.user.UserRepository;
 import com.lifelog.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -43,10 +45,11 @@ public class AuthService {
     }
 
     public TokenResponse refresh(RefreshRequest request) {
-        if (!tokenProvider.validate(request.refreshToken())) {
-            throw BusinessException.unauthorized("유효하지 않은 refresh 토큰입니다.");
-        }
-        Long userId = tokenProvider.getUserId(request.refreshToken());
+        Long userId = tokenProvider.resolveRefreshUserId(request.refreshToken())
+                .orElseThrow(() -> {
+                    log.warn("refresh 토큰 재발급 거부: 유효하지 않거나 refresh 타입이 아닌 토큰");
+                    return BusinessException.unauthorized("유효하지 않은 refresh 토큰입니다.");
+                });
         return TokenResponse.of(
                 tokenProvider.createAccessToken(userId),
                 tokenProvider.createRefreshToken(userId)

@@ -26,6 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -77,7 +78,7 @@ class EventControllerTest {
 
     @Test
     void list_withInvalidToken_returnsUnauthorized() throws Exception {
-        when(jwtTokenProvider.validate("forged.token.value")).thenReturn(false);
+        when(jwtTokenProvider.resolveAccessUserId("forged.token.value")).thenReturn(Optional.empty());
 
         mockMvc.perform(get("/api/v1/events").header("Authorization", "Bearer forged.token.value"))
                 .andExpect(status().isUnauthorized())

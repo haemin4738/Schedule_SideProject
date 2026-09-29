@@ -93,13 +93,13 @@ paths:
               $ref: '#/components/schemas/RefreshRequest'
       responses:
         '200':
-          description: 새 액세스 토큰 반환
+          description: 새 access/refresh 토큰 반환
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponse_TokenResponse'
         '401':
-          description: refresh 토큰 만료 또는 무효
+          description: refresh 토큰 만료 또는 무효 (access 토큰을 제출해도 401)
           content:
             application/json:
               schema:
@@ -688,6 +688,7 @@ components:
         access 토큰(15분). 토큰이 없거나 만료·위조되면 모든 인증 필요 API가 401
         `{"success":false,"data":null,"error":"인증이 필요합니다."}` 을 반환한다.
         401을 받으면 클라이언트는 /auth/refresh 로 재발급 후 재시도한다.
+        토큰에는 type 클레임(access/refresh)이 있으며, refresh 토큰으로 API를 호출하면 401이다.
 
   schemas:
 
