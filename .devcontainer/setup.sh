@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 워크스페이스 루트 (안내 명령어를 현재 위치와 무관하게 쓰기 위해 절대경로 사용)
+# 워크스페이스 루트 (의존성 설치를 현재 위치와 무관하게 실행하기 위해 절대경로 사용)
 WORKSPACE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Claude Code 설치
@@ -80,6 +80,6 @@ fi
 
 echo "✅ 세팅 완료!"
 echo ""
-echo "▶ 인프라 시작:  docker compose -f $WORKSPACE_DIR/docker-compose.yml up -d"
-echo "▶ 백엔드 실행:  cd $WORKSPACE_DIR/backend && ./gradlew :api:bootRun --args='--spring.profiles.active=local'"
+echo "▶ 인프라 시작:  docker compose -f /IdeaProjects/SideProject/docker-compose.yml up -d"
+echo "▶ 백엔드 실행:  cd /IdeaProjects/SideProject/backend && ./gradlew :api:bootRun --args='--spring.profiles.active=local'"
 echo "▶ Claude 자율:  claude --dangerously-skip-permissions"
