@@ -3,7 +3,7 @@ package com.lifelog.auth;
 import com.lifelog.auth.dto.TokenResponse;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.common.exception.ErrorCode;
-import com.lifelog.domain.user.session.RefreshRotationResult;
+import com.lifelog.domain.user.session.RefreshRotationOutcome;
 import com.lifelog.domain.user.session.RefreshSession;
 import com.lifelog.domain.user.session.RefreshSessionStore;
 import com.lifelog.security.JwtTokenProvider;
@@ -30,12 +30,11 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuthTokenService {
 
-    /** 회전 직후 이전 토큰으로 온 동시 요청을 재사용이 아닌 경합(409)으로 판정하는 유예 시간 */
-    static final Duration REUSE_GRACE = Duration.ofSeconds(30);
+    /** 회전 직후 직전 refresh 토큰으로도 재발급을 허용하는 겹침 구간 (탭 동시 refresh, 응답 유실 재시도) */
+    static final Duration ROTATION_OVERLAP = Duration.ofSeconds(30);
 
     static final String INVALID_REFRESH_TOKEN_MESSAGE = "유효하지 않은 refresh 토큰입니다.";
     static final String SESSION_REVOKED_MESSAGE = "보안을 위해 모든 기기에서 로그아웃되었습니다. 다시 로그인해 주세요.";
-    static final String REFRESH_IN_PROGRESS_MESSAGE = "다른 요청에서 토큰을 갱신하는 중입니다. 잠시 후 다시 시도해 주세요.";
 
     private final JwtTokenProvider tokenProvider;
     private final RefreshSessionStore refreshSessionStore;
@@ -55,7 +54,10 @@ public class AuthTokenService {
                 tokenProvider.createRefreshToken(userId, sessionId, tokenId, now, expiresAt));
     }
 
-    /** refresh 토큰을 회전한다. 세션(sid)과 최초 인증 시각(auth_time)은 유지된다 */
+    /**
+     * refresh 토큰을 회전한다. 세션(sid)과 최초 인증 시각(auth_time)은 유지된다.
+     * 회전 직후 겹침 구간({@link #ROTATION_OVERLAP}) 안에 직전 토큰이 오면 저장소의 현재 jti 로 재발급한다.
+     */
     public TokenResponse rotate(String refreshToken) {
         RefreshTokenClaims claims = tokenProvider.parseRefreshToken(refreshToken)
                 .orElseThrow(() -> {
@@ -74,19 +76,21 @@ public class AuthTokenService {
         }
 
         String newTokenId = newId();
-        RefreshRotationResult result = refreshSessionStore.rotate(
-                userId, claims.sessionId(), claims.tokenId(), newTokenId, ttl, now, REUSE_GRACE);
+        RefreshRotationOutcome outcome = refreshSessionStore.rotate(
+                userId, claims.sessionId(), claims.tokenId(), newTokenId, ttl, now, ROTATION_OVERLAP);
 
-        return switch (result) {
+        return switch (outcome.result()) {
             case ROTATED -> {
                 log.info("refresh 토큰 회전: userId={}", userId);
-                yield TokenResponse.of(
-                        tokenProvider.createAccessToken(userId),
-                        tokenProvider.createRefreshToken(userId, claims.sessionId(), newTokenId, claims.authTime(), expiresAt));
+                yield issueRotated(userId, claims, outcome, expiresAt);
             }
-            case STALE_CONCURRENT -> {
-                log.warn("refresh 경합: 직전에 회전된 토큰으로 요청, userId={}", userId);
-                throw BusinessException.conflict(REFRESH_IN_PROGRESS_MESSAGE, ErrorCode.REFRESH_IN_PROGRESS);
+            case REISSUED -> {
+                log.info("refresh 재발급: 회전 직후 직전 토큰 재제출(겹침 구간), userId={}", userId);
+                yield issueRotated(userId, claims, outcome, expiresAt);
+            }
+            case PREVIOUS_AFTER_GRACE -> {
+                log.warn("refresh 거부: 겹침 구간 경과 후 직전 토큰 재제출, 해당 세션만 폐기, userId={}", userId);
+                throw invalidRefreshToken();
             }
             case REUSE_DETECTED -> {
                 log.warn("refresh 토큰 재사용 탐지: 사용자 전체 세션 폐기, userId={}", userId);
@@ -101,6 +105,18 @@ public class AuthTokenService {
                 throw invalidRefreshToken();
             }
         };
+    }
+
+    /** ROTATED/REISSUED 공통 발급 — 저장소가 돌려준 jti 를 쓰고 sid·auth_time 은 유지, exp 는 이번 요청 기준으로 재계산된 값 */
+    private TokenResponse issueRotated(Long userId, RefreshTokenClaims claims, RefreshRotationOutcome outcome,
+                                       Instant expiresAt) {
+        String tokenId = outcome.tokenId();
+        if (tokenId == null || tokenId.isBlank()) {
+            throw new IllegalStateException("refresh session store returned " + outcome.result() + " without tokenId");
+        }
+        return TokenResponse.of(
+                tokenProvider.createAccessToken(userId),
+                tokenProvider.createRefreshToken(userId, claims.sessionId(), tokenId, claims.authTime(), expiresAt));
     }
 
     /**

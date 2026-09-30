@@ -45,8 +45,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * api 모듈 첫 전체 컨텍스트 통합 테스트 — 실제 MySQL(lifelog_test) + 실제 Redis(REDIS_HOST).
- * Clock 빈을 테스트용 가변 Clock 으로 교체해 유예(30초)·idle(15일)·절대(30일) 수명 경계를 재현한다.
- * JWT 만료와 회전 유예 판정은 모두 이 Clock 기준이며, Redis 의 실제 TTL 은 테스트 시간 동안 만료되지 않는다.
+ * Clock 빈을 테스트용 가변 Clock 으로 교체해 회전 겹침 구간(30초)·idle(15일)·절대(30일) 수명 경계를 재현한다.
+ * JWT 만료와 겹침 구간 판정은 모두 이 Clock 기준이며, Redis 의 실제 TTL 은 테스트 시간 동안 만료되지 않는다.
  *
  * <p>테스트마다 고유 이메일로 가입하고, 종료 시 해당 사용자 행과 Redis 키(auth:refresh:{u:id}:*)를 삭제한다.
  * api 모듈은 spring-data-redis/spring-jdbc 에 컴파일 의존이 없으므로(빌드 파일 변경 금지)
@@ -59,7 +59,7 @@ class AuthSessionIntegrationTest {
 
     private static final String BASE = "/api/v1/auth";
     private static final String PASSWORD = "Passw0rd!x";
-    private static final Duration GRACE = Duration.ofSeconds(30);
+    private static final Duration OVERLAP = Duration.ofSeconds(30);
     private static final String SESSION_REVOKED_MESSAGE = "보안을 위해 모든 기기에서 로그아웃되었습니다. 다시 로그인해 주세요.";
 
     /** 테스트에서 시각을 앞으로 돌릴 수 있는 Clock */
@@ -198,6 +198,16 @@ class AuthSessionIntegrationTest {
                 .content("{\"refreshToken\":\"" + refreshToken + "\"}"));
     }
 
+    /** 서명 검증 후 refresh 토큰의 jti */
+    private String jtiOf(String refreshToken) {
+        return Jwts.parser()
+                .verifyWith(Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8)))
+                .build()
+                .parseSignedClaims(refreshToken)
+                .getPayload()
+                .getId();
+    }
+
     private void expectError(ResultActions result, int status, String code) throws Exception {
         result.andExpect(status().is(status))
                 .andExpect(jsonPath("$.success").value(false))
@@ -206,40 +216,78 @@ class AuthSessionIntegrationTest {
                 .andExpect(jsonPath("$.code").value(code));
     }
 
-    // ---------- 재사용 탐지 / 유예 ----------
+    // ---------- 재사용 탐지 / 겹침 구간 ----------
 
     @Test
-    void refresh_whenOldTokenReusedAfterGrace_revokesAllSessionsOfUser() throws Exception {
+    void refresh_whenTokenTwoGenerationsOldReused_revokesAllSessionsOfUser() throws Exception {
         signup();
         String deviceA0 = login(lastEmail);
         String deviceB = login(lastEmail);
 
         String deviceA1 = refresh(deviceA0);
-        clock.advance(GRACE.plusSeconds(1));
+        String deviceA2 = refresh(deviceA1);
 
-        // 유예 경과 후 이전 토큰 재사용 → 재사용 탐지, 사용자 전체 세션 폐기
+        // 현재(A2)도 직전(A1)도 아닌 두 세대 전 토큰 → 재사용 탐지, 사용자 전체 세션 폐기
         expectError(refreshRequest(deviceA0), 401, "SESSION_REVOKED");
         refreshRequest(deviceA0).andExpect(jsonPath("$.error").value(SESSION_REVOKED_MESSAGE));
         // 다른 기기(B)와 A 의 최신 토큰도 모두 폐기됨
         expectError(refreshRequest(deviceB), 401, "SESSION_REVOKED");
-        expectError(refreshRequest(deviceA1), 401, "SESSION_REVOKED");
+        expectError(refreshRequest(deviceA2), 401, "SESSION_REVOKED");
     }
 
     @Test
-    void refresh_whenOldTokenReusedWithinGrace_returns409AndKeepsSession() throws Exception {
+    void refresh_whenPreviousTokenWithinOverlap_reissuesAndBothPathsContinue() throws Exception {
+        signup();
+        String deviceA0 = login(lastEmail);
+        String deviceB = login(lastEmail);
+
+        // 탭 1 이 회전, 탭 2 는 겹침 구간 안에 직전 토큰(A0)으로 요청
+        String tab1 = refresh(deviceA0);
+        clock.advance(OVERLAP.minusSeconds(1));
+        String tab2 = refresh(deviceA0);
+
+        // 탭 2 는 회전 없이 현재 jti 로 재발급받는다
+        assertThat(jtiOf(tab2)).isEqualTo(jtiOf(tab1));
+
+        // 두 경로 모두 계속 사용 가능: 한쪽이 회전하면 다른 쪽은 겹침 구간 안의 직전 토큰이 된다
+        String tab1Next = refresh(tab1);
+        String tab2Next = refresh(tab2);
+        assertThat(jtiOf(tab2Next)).isEqualTo(jtiOf(tab1Next)).isNotEqualTo(jtiOf(tab1));
+        refresh(tab1Next);
+        // 다른 기기는 영향 없음
+        refresh(deviceB);
+    }
+
+    @Test
+    void refresh_whenPreviousTokenAfterOverlap_returnsInvalidAndOnlyThatSessionEnds() throws Exception {
         signup();
         String deviceA0 = login(lastEmail);
         String deviceB = login(lastEmail);
 
         String deviceA1 = refresh(deviceA0);
-        clock.advance(GRACE.minusSeconds(1));
+        clock.advance(OVERLAP.plusSeconds(1));
 
-        expectError(refreshRequest(deviceA0), 409, "REFRESH_IN_PROGRESS");
-
-        // 세션 유지: 최신 토큰으로 계속 회전되고, 다른 기기도 영향 없음
-        String deviceA2 = refresh(deviceA1);
-        assertThat(deviceA2).isNotEqualTo(deviceA1);
+        // 겹침 구간 경과 후 직전 토큰 → 그 세션만 조용히 종료(보안 알림 없음)
+        expectError(refreshRequest(deviceA0), 401, "INVALID_REFRESH_TOKEN");
+        expectError(refreshRequest(deviceA1), 401, "INVALID_REFRESH_TOKEN");
+        // 다른 기기는 영향 없음
         refresh(deviceB);
+    }
+
+    @Test
+    void refresh_whenResponseLostScenario_retryWithinOverlapSucceeds() throws Exception {
+        signup();
+        String deviceA0 = login(lastEmail);
+
+        // 서버는 회전했지만 응답이 클라이언트에 도달하지 못함(A1 유실)
+        refreshRequest(deviceA0).andExpect(status().isOk());
+        clock.advance(Duration.ofSeconds(5));
+
+        // 클라이언트는 가진 A0 로 재시도 → 200, 이후 정상 회전 계속
+        String retried = refresh(deviceA0);
+        String next = refresh(retried);
+        assertThat(jtiOf(next)).isNotEqualTo(jtiOf(retried));
+        refresh(next);
     }
 
     // ---------- 로그아웃 ----------

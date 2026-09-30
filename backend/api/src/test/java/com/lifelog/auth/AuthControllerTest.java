@@ -170,18 +170,6 @@ class AuthControllerTest {
     }
 
     @Test
-    void refresh_whenConcurrentRotation_returns409WithCode() throws Exception {
-        when(authService.refresh(any())).thenThrow(
-                BusinessException.conflict("다른 요청에서 토큰을 갱신하는 중입니다.", ErrorCode.REFRESH_IN_PROGRESS));
-
-        mockMvc.perform(post(BASE + "/refresh")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RefreshRequest("refresh.token"))))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("REFRESH_IN_PROGRESS"));
-    }
-
-    @Test
     void login_whenInvalidCredentials_omitsCodeField() throws Exception {
         when(authService.login(any())).thenThrow(BusinessException.unauthorized("이메일 또는 비밀번호가 올바르지 않습니다."));
 

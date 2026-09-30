@@ -4,6 +4,7 @@ import com.lifelog.auth.dto.TokenResponse;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.common.exception.ErrorCode;
 import com.lifelog.domain.user.session.AuthSessionUnavailableException;
+import com.lifelog.domain.user.session.RefreshRotationOutcome;
 import com.lifelog.domain.user.session.RefreshRotationResult;
 import com.lifelog.domain.user.session.RefreshSession;
 import com.lifelog.domain.user.session.RefreshSessionStore;
@@ -20,6 +21,7 @@ import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.stubbing.Answer;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpStatus;
@@ -80,6 +82,11 @@ class AuthTokenServiceTest {
     /** authTime 기준, 지정 만료 시각의 refresh 토큰 */
     private String refreshToken(String sid, String jti, Instant authTime, Instant expiresAt) {
         return tokenProvider.createRefreshToken(USER_ID, sid, jti, authTime, expiresAt);
+    }
+
+    /** 저장소가 서비스가 넘긴 새 jti 로 회전했다고 응답 */
+    private static Answer<RefreshRotationOutcome> rotated() {
+        return inv -> new RefreshRotationOutcome(RefreshRotationResult.ROTATED, inv.getArgument(3));
     }
 
     private static void assertBusiness(Throwable thrown, HttpStatus status, ErrorCode code, String message) {
@@ -152,8 +159,8 @@ class AuthTokenServiceTest {
     void rotate_whenRotated_keepsSidAndAuthTimeWithNewJti() {
         Instant authTime = NOW.minus(Duration.ofDays(3));
         String presented = refreshToken("sid-1", "jti-old", authTime, NOW.plus(Duration.ofDays(1)));
-        when(store.rotate(eq(USER_ID), eq("sid-1"), eq("jti-old"), anyString(), any(), eq(NOW), eq(AuthTokenService.REUSE_GRACE)))
-                .thenReturn(RefreshRotationResult.ROTATED);
+        when(store.rotate(eq(USER_ID), eq("sid-1"), eq("jti-old"), anyString(), any(), eq(NOW), eq(AuthTokenService.ROTATION_OVERLAP)))
+                .thenAnswer(rotated());
 
         TokenResponse tokens = service.rotate(presented);
 
@@ -172,7 +179,7 @@ class AuthTokenServiceTest {
         Instant authTime = NOW.minus(Duration.ofDays(3));
         String presented = refreshToken("sid-1", "jti-old", authTime, NOW.plus(Duration.ofHours(1)));
         when(store.rotate(anyLong(), anyString(), anyString(), anyString(), any(), any(), any()))
-                .thenReturn(RefreshRotationResult.ROTATED);
+                .thenAnswer(rotated());
 
         TokenResponse tokens = service.rotate(presented);
 
@@ -190,7 +197,7 @@ class AuthTokenServiceTest {
         Instant authTime = NOW.minus(Duration.ofDays(29));
         String presented = refreshToken("sid-1", "jti-old", authTime, NOW.plus(Duration.ofHours(1)));
         when(store.rotate(anyLong(), anyString(), anyString(), anyString(), any(), any(), any()))
-                .thenReturn(RefreshRotationResult.ROTATED);
+                .thenAnswer(rotated());
 
         TokenResponse tokens = service.rotate(presented);
 
@@ -206,7 +213,7 @@ class AuthTokenServiceTest {
         Instant authTime = NOW.minus(ABSOLUTE).plusSeconds(1);
         String presented = refreshToken("sid-1", "jti-old", authTime, NOW.plusSeconds(1));
         when(store.rotate(anyLong(), anyString(), anyString(), anyString(), any(), any(), any()))
-                .thenReturn(RefreshRotationResult.ROTATED);
+                .thenAnswer(rotated());
 
         service.rotate(presented);
 
@@ -239,22 +246,68 @@ class AuthTokenServiceTest {
     }
 
     @Test
-    void rotate_whenStaleConcurrent_throwsConflictRefreshInProgress() {
+    void rotate_whenReissued_issuesTokenWithStoreCurrentJtiAndSameSidAuthTime() {
+        Instant authTime = NOW.minus(Duration.ofDays(3));
+        String presented = refreshToken("sid-1", "jti-prev", authTime, NOW.plus(Duration.ofDays(1)));
+        when(store.rotate(eq(USER_ID), eq("sid-1"), eq("jti-prev"), anyString(), any(), eq(NOW),
+                eq(AuthTokenService.ROTATION_OVERLAP)))
+                .thenReturn(new RefreshRotationOutcome(RefreshRotationResult.REISSUED, "jti-current"));
+
+        TokenResponse tokens = service.rotate(presented);
+
+        RefreshTokenClaims claims = parse(tokens.refreshToken());
+        assertThat(claims.tokenId()).isEqualTo("jti-current");
+        assertThat(claims.sessionId()).isEqualTo("sid-1");
+        assertThat(claims.authTime()).isEqualTo(authTime);
+        assertThat(tokenProvider.resolveAccessUserId(tokens.accessToken())).contains(USER_ID);
+    }
+
+    @Test
+    void rotate_whenReissued_expRecalculatedFromNow() {
+        Instant authTime = NOW.minus(Duration.ofDays(3));
+        String presented = refreshToken("sid-1", "jti-prev", authTime, NOW.plus(Duration.ofHours(1)));
+        when(store.rotate(anyLong(), anyString(), anyString(), anyString(), any(), any(), any()))
+                .thenReturn(new RefreshRotationOutcome(RefreshRotationResult.REISSUED, "jti-current"));
+
+        TokenResponse tokens = service.rotate(presented);
+
+        ArgumentCaptor<Duration> ttl = ArgumentCaptor.forClass(Duration.class);
+        verify(store).rotate(anyLong(), anyString(), anyString(), anyString(), ttl.capture(), any(), any());
+        RefreshTokenClaims claims = parse(tokens.refreshToken());
+        // 제시한 토큰의 exp(1시간 뒤)가 아니라 이번 요청 시각 기준 idle 수명
+        assertThat(claims.expiresAt()).isEqualTo(NOW.plus(IDLE));
+        assertThat(ttl.getValue()).isEqualTo(IDLE);
+    }
+
+    @Test
+    void rotate_whenPreviousAfterGrace_throwsInvalidRefreshTokenWithoutSessionRevokedCode() {
         String presented = refreshToken("sid-1", "jti-prev", NOW, NOW.plus(IDLE));
         when(store.rotate(anyLong(), anyString(), anyString(), anyString(), any(), any(), any()))
-                .thenReturn(RefreshRotationResult.STALE_CONCURRENT);
+                .thenReturn(RefreshRotationOutcome.of(RefreshRotationResult.PREVIOUS_AFTER_GRACE));
 
         Throwable thrown = catchThrowable(() -> service.rotate(presented));
 
-        assertBusiness(thrown, HttpStatus.CONFLICT, ErrorCode.REFRESH_IN_PROGRESS,
-                AuthTokenService.REFRESH_IN_PROGRESS_MESSAGE);
+        assertBusiness(thrown, HttpStatus.UNAUTHORIZED, ErrorCode.INVALID_REFRESH_TOKEN,
+                AuthTokenService.INVALID_REFRESH_TOKEN_MESSAGE);
+        assertThat(((BusinessException) thrown).getCode()).isNotEqualTo(ErrorCode.SESSION_REVOKED);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = RefreshRotationResult.class, names = {"ROTATED", "REISSUED"})
+    void rotate_whenRotatedOrReissuedWithNullTokenId_throwsIllegalState(RefreshRotationResult result) {
+        String presented = refreshToken("sid-1", "jti-1", NOW, NOW.plus(IDLE));
+        when(store.rotate(anyLong(), anyString(), anyString(), anyString(), any(), any(), any()))
+                .thenReturn(RefreshRotationOutcome.of(result));
+
+        assertThatThrownBy(() -> service.rotate(presented)).isInstanceOf(IllegalStateException.class);
     }
 
     @ParameterizedTest
     @EnumSource(value = RefreshRotationResult.class, names = {"REUSE_DETECTED", "REVOKED"})
     void rotate_whenReuseDetectedOrRevoked_throwsUnauthorizedSessionRevoked(RefreshRotationResult result) {
         String presented = refreshToken("sid-1", "jti-x", NOW, NOW.plus(IDLE));
-        when(store.rotate(anyLong(), anyString(), anyString(), anyString(), any(), any(), any())).thenReturn(result);
+        when(store.rotate(anyLong(), anyString(), anyString(), anyString(), any(), any(), any()))
+                .thenReturn(RefreshRotationOutcome.of(result));
 
         Throwable thrown = catchThrowable(() -> service.rotate(presented));
 
@@ -266,7 +319,7 @@ class AuthTokenServiceTest {
     void rotate_whenSessionNotFound_throwsUnauthorizedInvalidRefreshToken() {
         String presented = refreshToken("sid-1", "jti-x", NOW, NOW.plus(IDLE));
         when(store.rotate(anyLong(), anyString(), anyString(), anyString(), any(), any(), any()))
-                .thenReturn(RefreshRotationResult.NOT_FOUND);
+                .thenReturn(RefreshRotationOutcome.of(RefreshRotationResult.NOT_FOUND));
 
         Throwable thrown = catchThrowable(() -> service.rotate(presented));
 

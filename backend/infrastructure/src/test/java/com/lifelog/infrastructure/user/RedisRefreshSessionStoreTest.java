@@ -1,6 +1,7 @@
 package com.lifelog.infrastructure.user;
 
 import com.lifelog.domain.user.session.AuthSessionUnavailableException;
+import com.lifelog.domain.user.session.RefreshRotationOutcome;
 import com.lifelog.domain.user.session.RefreshRotationResult;
 import com.lifelog.domain.user.session.RefreshSession;
 import org.junit.jupiter.api.AfterAll;
@@ -41,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class RedisRefreshSessionStoreTest {
 
     private static final Duration TTL = Duration.ofMinutes(10);
-    private static final Duration GRACE = Duration.ofSeconds(30);
+    private static final Duration OVERLAP = Duration.ofSeconds(30);
     private static final Instant AUTH_TIME = Instant.parse("2026-09-30T00:00:00Z");
 
     private static LettuceConnectionFactory connectionFactory;
@@ -97,7 +98,11 @@ class RedisRefreshSessionStoreTest {
     }
 
     private RefreshRotationResult rotate(Long userId, String sid, String presented, String newJti, Instant now) {
-        return store.rotate(userId, sid, presented, newJti, TTL, now, GRACE);
+        return rotateOutcome(userId, sid, presented, newJti, now).result();
+    }
+
+    private RefreshRotationOutcome rotateOutcome(Long userId, String sid, String presented, String newJti, Instant now) {
+        return store.rotate(userId, sid, presented, newJti, TTL, now, OVERLAP);
     }
 
     private long pttl(String key) {
@@ -181,7 +186,7 @@ class RedisRefreshSessionStoreTest {
         createSession(userId, sid, "jti-1", Duration.ofMinutes(1));
         Instant now = Instant.now();
 
-        assertThat(store.rotate(userId, sid, "jti-1", "jti-2", TTL, now, GRACE))
+        assertThat(store.rotate(userId, sid, "jti-1", "jti-2", TTL, now, OVERLAP).result())
                 .isEqualTo(RefreshRotationResult.ROTATED);
 
         String sessionKey = RedisRefreshSessionStore.sessionKey(userId, sid);
@@ -208,24 +213,38 @@ class RedisRefreshSessionStoreTest {
     }
 
     @Test
-    void rotate_whenPreviousJtiWithinGrace_returnsStaleConcurrentWithoutChange() {
+    void rotate_whenRotated_returnsNewTokenIdInOutcome() {
+        Long userId = newUserId();
+        String sid = newId();
+        createSession(userId, sid, "jti-1", TTL);
+
+        assertThat(rotateOutcome(userId, sid, "jti-1", "jti-2", Instant.now()))
+                .isEqualTo(new RefreshRotationOutcome(RefreshRotationResult.ROTATED, "jti-2"));
+    }
+
+    @Test
+    void rotate_whenPreviousJtiWithinOverlap_returnsReissuedWithCurrentJtiWithoutRotation() {
         Long userId = newUserId();
         String sid = newId();
         createSession(userId, sid, "jti-1", TTL);
         Instant now = Instant.now();
         rotate(userId, sid, "jti-1", "jti-2", now);
 
-        assertThat(rotate(userId, sid, "jti-1", "jti-x", now.plus(GRACE)))
-                .isEqualTo(RefreshRotationResult.STALE_CONCURRENT);
+        assertThat(rotateOutcome(userId, sid, "jti-1", "jti-x", now.plus(OVERLAP)))
+                .isEqualTo(new RefreshRotationOutcome(RefreshRotationResult.REISSUED, "jti-2"));
 
+        // 회전하지 않았다: jti/prevJti/rotatedAt 불변, 제시된 새 jti(jti-x)는 저장되지 않음
         Map<Object, Object> fields = redis.opsForHash().entries(RedisRefreshSessionStore.sessionKey(userId, sid));
-        assertThat(fields).containsEntry("jti", "jti-2").containsEntry("prevJti", "jti-1");
-        // 409 이후 새 토큰으로 정상 회전 가능
+        assertThat(fields)
+                .containsEntry("jti", "jti-2")
+                .containsEntry("prevJti", "jti-1")
+                .containsEntry("rotatedAt", String.valueOf(now.toEpochMilli()));
+        // 이후 현재 jti 로 정상 회전 가능
         assertThat(rotate(userId, sid, "jti-2", "jti-3", now.plusSeconds(1))).isEqualTo(RefreshRotationResult.ROTATED);
     }
 
     @Test
-    void rotate_whenPreviousJtiAfterGrace_detectsReuseAndDeletesAllSessions() {
+    void rotate_whenPreviousJtiAfterOverlap_revokesOnlyThatSessionWithoutTombstone() {
         Long userId = newUserId();
         String sid = newId();
         String otherSid = newId();
@@ -234,12 +253,116 @@ class RedisRefreshSessionStoreTest {
         Instant now = Instant.now();
         rotate(userId, sid, "jti-1", "jti-2", now);
 
-        assertThat(rotate(userId, sid, "jti-1", "jti-x", now.plus(GRACE).plusMillis(1)))
-                .isEqualTo(RefreshRotationResult.REUSE_DETECTED);
+        assertThat(rotateOutcome(userId, sid, "jti-1", "jti-x", now.plus(OVERLAP).plusMillis(1)))
+                .isEqualTo(RefreshRotationOutcome.of(RefreshRotationResult.PREVIOUS_AFTER_GRACE));
+
+        assertThat(redis.hasKey(RedisRefreshSessionStore.sessionKey(userId, sid))).isFalse();
+        assertThat(redis.hasKey(RedisRefreshSessionStore.tombstoneKey(userId, sid))).isFalse();
+        assertThat(redis.hasKey(RedisRefreshSessionStore.tombstoneKey(userId, otherSid))).isFalse();
+        assertThat(redis.opsForSet().members(RedisRefreshSessionStore.indexKey(userId))).containsExactly(otherSid);
+        // 해당 세션의 최신 토큰도 끝났지만 보안 폐기(REVOKED)가 아니다
+        assertThat(rotate(userId, sid, "jti-2", "jti-3", now.plusSeconds(31))).isEqualTo(RefreshRotationResult.NOT_FOUND);
+        // 다른 세션은 생존
+        assertThat(rotate(userId, otherSid, "jti-other", "jti-other-2", now.plusSeconds(31)))
+                .isEqualTo(RefreshRotationResult.ROTATED);
+    }
+
+    @Test
+    void rotate_whenPreviousAfterOverlapOnLastSession_deletesEmptyIndex() {
+        Long userId = newUserId();
+        String sid = newId();
+        createSession(userId, sid, "jti-1", TTL);
+        Instant now = Instant.now();
+        rotate(userId, sid, "jti-1", "jti-2", now);
+
+        assertThat(rotate(userId, sid, "jti-1", "jti-x", now.plus(OVERLAP).plusSeconds(1)))
+                .isEqualTo(RefreshRotationResult.PREVIOUS_AFTER_GRACE);
+
+        assertThat(redis.keys(RedisRefreshSessionStore.userPrefix(userId) + "*")).isEmpty();
+    }
+
+    @Test
+    void rotate_whenJtiTwoGenerationsOld_detectsReuseAndRevokesAll() {
+        Long userId = newUserId();
+        String sid = newId();
+        String otherSid = newId();
+        createSession(userId, sid, "jti-1", TTL);
+        createSession(userId, otherSid, "jti-other", TTL);
+        Instant now = Instant.now();
+        rotate(userId, sid, "jti-1", "jti-2", now);
+        rotate(userId, sid, "jti-2", "jti-3", now);
+
+        // 겹침 구간 안이어도 두 세대 전 jti 는 재사용
+        assertThat(rotateOutcome(userId, sid, "jti-1", "jti-x", now))
+                .isEqualTo(RefreshRotationOutcome.of(RefreshRotationResult.REUSE_DETECTED));
 
         assertThat(redis.hasKey(RedisRefreshSessionStore.sessionKey(userId, sid))).isFalse();
         assertThat(redis.hasKey(RedisRefreshSessionStore.sessionKey(userId, otherSid))).isFalse();
         assertThat(redis.hasKey(RedisRefreshSessionStore.indexKey(userId))).isFalse();
+        assertThat(redis.opsForValue().get(RedisRefreshSessionStore.tombstoneKey(userId, sid))).isEqualTo("REUSE");
+        assertThat(redis.opsForValue().get(RedisRefreshSessionStore.tombstoneKey(userId, otherSid))).isEqualTo("REUSE");
+    }
+
+    @Test
+    void rotate_whenReissued_extendsSessionTtlOnlyIfLonger() {
+        Long userId = newUserId();
+        String sid = newId();
+        String sessionKey = RedisRefreshSessionStore.sessionKey(userId, sid);
+        String indexKey = RedisRefreshSessionStore.indexKey(userId);
+        createSession(userId, sid, "jti-1", TTL);
+        Instant now = Instant.now();
+        rotate(userId, sid, "jti-1", "jti-2", now); // 세션 TTL 10분
+
+        // 더 짧은 ttl 로 재발급 → 줄이지 않는다
+        assertThat(store.rotate(userId, sid, "jti-1", "jti-x", Duration.ofMinutes(1), now.plusSeconds(1), OVERLAP)
+                .result()).isEqualTo(RefreshRotationResult.REISSUED);
+        assertThat(pttl(sessionKey)).isGreaterThan(Duration.ofMinutes(9).toMillis());
+
+        // 더 긴 ttl 로 재발급 → 늘리고 인덱스 TTL 도 맞춘다
+        assertThat(store.rotate(userId, sid, "jti-1", "jti-y", Duration.ofMinutes(20), now.plusSeconds(2), OVERLAP)
+                .result()).isEqualTo(RefreshRotationResult.REISSUED);
+        assertThat(pttl(sessionKey)).isGreaterThan(Duration.ofMinutes(19).toMillis());
+        assertThat(pttl(indexKey)).isGreaterThan(Duration.ofMinutes(19).toMillis());
+    }
+
+    @Test
+    void rotate_whenReissuedRepeatedly_overlapWindowNotExtended() {
+        Long userId = newUserId();
+        String sid = newId();
+        createSession(userId, sid, "jti-1", TTL);
+        Instant rotatedAt = Instant.now();
+        rotate(userId, sid, "jti-1", "jti-2", rotatedAt);
+
+        for (int seconds = 10; seconds <= 30; seconds += 10) {
+            assertThat(rotate(userId, sid, "jti-1", "jti-x", rotatedAt.plusSeconds(seconds)))
+                    .isEqualTo(RefreshRotationResult.REISSUED);
+        }
+        assertThat(redis.opsForHash().get(RedisRefreshSessionStore.sessionKey(userId, sid), "rotatedAt"))
+                .isEqualTo(String.valueOf(rotatedAt.toEpochMilli()));
+
+        // 원래 회전 시각 기준 31초 → 겹침 구간 종료
+        assertThat(rotate(userId, sid, "jti-1", "jti-x", rotatedAt.plusSeconds(31)))
+                .isEqualTo(RefreshRotationResult.PREVIOUS_AFTER_GRACE);
+    }
+
+    @Test
+    void rotate_afterReissue_eitherTokenCanRotateAndOtherBecomesPrevious() {
+        Long userId = newUserId();
+        String sid = newId();
+        createSession(userId, sid, "jti-1", TTL);
+        Instant now = Instant.now();
+        // 경로 A 는 회전으로, 경로 B 는 재발급으로 같은 jti-2 를 보유
+        assertThat(rotateOutcome(userId, sid, "jti-1", "jti-2", now).tokenId()).isEqualTo("jti-2");
+        assertThat(rotateOutcome(userId, sid, "jti-1", "jti-x", now.plusSeconds(1)).tokenId()).isEqualTo("jti-2");
+
+        // 어느 경로든 먼저 온 쪽이 회전하고, 나머지는 직전 토큰으로 재발급받는다
+        assertThat(rotateOutcome(userId, sid, "jti-2", "jti-3", now.plusSeconds(2)))
+                .isEqualTo(new RefreshRotationOutcome(RefreshRotationResult.ROTATED, "jti-3"));
+        assertThat(rotateOutcome(userId, sid, "jti-2", "jti-y", now.plusSeconds(3)))
+                .isEqualTo(new RefreshRotationOutcome(RefreshRotationResult.REISSUED, "jti-3"));
+
+        Map<Object, Object> fields = redis.opsForHash().entries(RedisRefreshSessionStore.sessionKey(userId, sid));
+        assertThat(fields).containsEntry("jti", "jti-3").containsEntry("prevJti", "jti-2");
     }
 
     @Test
@@ -339,9 +462,9 @@ class RedisRefreshSessionStoreTest {
         createSession(userId, sid, "jti-1", TTL);
         Instant now = Instant.now();
 
-        assertThat(store.rotate(userId, blank, "jti-1", "jti-2", TTL, now, GRACE)).isEqualTo(RefreshRotationResult.NOT_FOUND);
-        assertThat(store.rotate(userId, sid, blank, "jti-2", TTL, now, GRACE)).isEqualTo(RefreshRotationResult.NOT_FOUND);
-        assertThat(store.rotate(userId, sid, "jti-1", blank, TTL, now, GRACE)).isEqualTo(RefreshRotationResult.NOT_FOUND);
+        assertThat(store.rotate(userId, blank, "jti-1", "jti-2", TTL, now, OVERLAP).result()).isEqualTo(RefreshRotationResult.NOT_FOUND);
+        assertThat(store.rotate(userId, sid, blank, "jti-2", TTL, now, OVERLAP).result()).isEqualTo(RefreshRotationResult.NOT_FOUND);
+        assertThat(store.rotate(userId, sid, "jti-1", blank, TTL, now, OVERLAP).result()).isEqualTo(RefreshRotationResult.NOT_FOUND);
         // 세션은 변경되지 않는다 (재사용 탐지로 오판하지 않음)
         assertThat(redis.opsForHash().get(RedisRefreshSessionStore.sessionKey(userId, sid), "jti")).isEqualTo("jti-1");
     }
@@ -353,16 +476,16 @@ class RedisRefreshSessionStoreTest {
         createSession(userId, sid, "jti-1", TTL);
         Instant now = Instant.now();
 
-        assertThat(store.rotate(null, sid, "jti-1", "jti-2", TTL, now, GRACE)).isEqualTo(RefreshRotationResult.NOT_FOUND);
-        assertThat(store.rotate(userId, sid, "jti-1", "jti-2", null, now, GRACE)).isEqualTo(RefreshRotationResult.NOT_FOUND);
-        assertThat(store.rotate(userId, sid, "jti-1", "jti-2", Duration.ZERO, now, GRACE)).isEqualTo(RefreshRotationResult.NOT_FOUND);
-        assertThat(store.rotate(userId, sid, "jti-1", "jti-2", Duration.ofSeconds(-1), now, GRACE)).isEqualTo(RefreshRotationResult.NOT_FOUND);
+        assertThat(store.rotate(null, sid, "jti-1", "jti-2", TTL, now, OVERLAP).result()).isEqualTo(RefreshRotationResult.NOT_FOUND);
+        assertThat(store.rotate(userId, sid, "jti-1", "jti-2", null, now, OVERLAP).result()).isEqualTo(RefreshRotationResult.NOT_FOUND);
+        assertThat(store.rotate(userId, sid, "jti-1", "jti-2", Duration.ZERO, now, OVERLAP).result()).isEqualTo(RefreshRotationResult.NOT_FOUND);
+        assertThat(store.rotate(userId, sid, "jti-1", "jti-2", Duration.ofSeconds(-1), now, OVERLAP).result()).isEqualTo(RefreshRotationResult.NOT_FOUND);
         assertThat(redis.opsForHash().get(RedisRefreshSessionStore.sessionKey(userId, sid), "jti")).isEqualTo("jti-1");
     }
 
     @Test
-    void rotate_whenNowOrGraceInvalid_throwsIllegalArgument() {
-        assertThatThrownBy(() -> store.rotate(1L, "sid", "a", "b", TTL, null, GRACE))
+    void rotate_whenNowOrOverlapInvalid_throwsIllegalArgument() {
+        assertThatThrownBy(() -> store.rotate(1L, "sid", "a", "b", TTL, null, OVERLAP))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> store.rotate(1L, "sid", "a", "b", TTL, Instant.now(), null))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -371,7 +494,7 @@ class RedisRefreshSessionStoreTest {
     }
 
     @Test
-    void rotate_whenSameJtiConcurrently_exactlyOneRotated() throws Exception {
+    void rotate_whenSameJtiConcurrently_exactlyOneRotatedOthersReissuedWithSameJti() throws Exception {
         Long userId = newUserId();
         String sid = newId();
         createSession(userId, sid, "jti-1", TTL);
@@ -380,27 +503,31 @@ class RedisRefreshSessionStoreTest {
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(threads);
         try {
-            List<Callable<RefreshRotationResult>> calls = new ArrayList<>();
+            List<Callable<RefreshRotationOutcome>> calls = new ArrayList<>();
             for (int i = 0; i < threads; i++) {
                 String newJti = "jti-2-" + i;
                 calls.add(() -> {
                     start.await();
-                    return rotate(userId, sid, "jti-1", newJti, now);
+                    return rotateOutcome(userId, sid, "jti-1", newJti, now);
                 });
             }
-            List<Future<RefreshRotationResult>> futures = new ArrayList<>();
-            for (Callable<RefreshRotationResult> call : calls) {
+            List<Future<RefreshRotationOutcome>> futures = new ArrayList<>();
+            for (Callable<RefreshRotationOutcome> call : calls) {
                 futures.add(executor.submit(call));
             }
             start.countDown();
-            List<RefreshRotationResult> results = new ArrayList<>();
-            for (Future<RefreshRotationResult> f : futures) {
+            List<RefreshRotationOutcome> results = new ArrayList<>();
+            for (Future<RefreshRotationOutcome> f : futures) {
                 results.add(f.get(10, TimeUnit.SECONDS));
             }
 
-            assertThat(results).filteredOn(r -> r == RefreshRotationResult.ROTATED).hasSize(1);
-            assertThat(results).filteredOn(r -> r != RefreshRotationResult.ROTATED)
-                    .containsOnly(RefreshRotationResult.STALE_CONCURRENT);
+            assertThat(results).filteredOn(r -> r.result() == RefreshRotationResult.ROTATED).hasSize(1);
+            assertThat(results).filteredOn(r -> r.result() != RefreshRotationResult.ROTATED)
+                    .extracting(RefreshRotationOutcome::result)
+                    .containsOnly(RefreshRotationResult.REISSUED);
+            // 모두 같은 jti(회전된 현재 jti)를 받는다
+            String current = (String) redis.opsForHash().get(RedisRefreshSessionStore.sessionKey(userId, sid), "jti");
+            assertThat(results).extracting(RefreshRotationOutcome::tokenId).containsOnly(current);
         } finally {
             executor.shutdownNow();
         }
@@ -476,6 +603,21 @@ class RedisRefreshSessionStoreTest {
         assertThat(redis.opsForHash().get(RedisRefreshSessionStore.sessionKey(owner, sid), "jti")).isEqualTo("jti-1");
     }
 
+    @Test
+    void toOutcome_whenUnknownCodeOrMalformedReply_returnsNotFound() {
+        assertThat(RedisRefreshSessionStore.toOutcome(List.of(99L, "jti")))
+                .isEqualTo(RefreshRotationOutcome.of(RefreshRotationResult.NOT_FOUND));
+        assertThat(RedisRefreshSessionStore.toOutcome(null))
+                .isEqualTo(RefreshRotationOutcome.of(RefreshRotationResult.NOT_FOUND));
+        assertThat(RedisRefreshSessionStore.toOutcome(List.of()))
+                .isEqualTo(RefreshRotationOutcome.of(RefreshRotationResult.NOT_FOUND));
+        assertThat(RedisRefreshSessionStore.toOutcome(List.of("x")))
+                .isEqualTo(RefreshRotationOutcome.of(RefreshRotationResult.NOT_FOUND));
+        // jti 가 빈 문자열이면 null
+        assertThat(RedisRefreshSessionStore.toOutcome(List.of(1L, "")))
+                .isEqualTo(RefreshRotationOutcome.of(RefreshRotationResult.ROTATED));
+    }
+
     // ---------- revoke ----------
 
     @Test
@@ -538,7 +680,7 @@ class RedisRefreshSessionStoreTest {
             assertThatThrownBy(() -> brokenStore.create(new RefreshSession(1L, "sid", "jti", AUTH_TIME), TTL))
                     .isInstanceOf(AuthSessionUnavailableException.class)
                     .hasCauseInstanceOf(org.springframework.dao.DataAccessException.class);
-            assertThatThrownBy(() -> brokenStore.rotate(1L, "sid", "a", "b", TTL, Instant.now(), GRACE))
+            assertThatThrownBy(() -> brokenStore.rotate(1L, "sid", "a", "b", TTL, Instant.now(), OVERLAP))
                     .isInstanceOf(AuthSessionUnavailableException.class);
             assertThatThrownBy(() -> brokenStore.revoke(1L, "sid"))
                     .isInstanceOf(AuthSessionUnavailableException.class);
