@@ -1,2 +1,69 @@
 @import "tailwindcss";
 @import "react-big-calendar/lib/css/react-big-calendar.css";
+
+/* react-big-calendar 기본 스타일을 구글 캘린더 느낌으로 덮어쓴다 (.lifelog-calendar 범위 안에서만) */
+.lifelog-calendar .rbc-month-view,
+.lifelog-calendar .rbc-time-view {
+  border-color: #dadce0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.lifelog-calendar .rbc-header {
+  border-bottom: none;
+  border-left-color: #dadce0;
+  padding: 6px 0 2px;
+  font-weight: 500;
+}
+.lifelog-calendar .rbc-month-row + .rbc-month-row,
+.lifelog-calendar .rbc-day-bg + .rbc-day-bg,
+.lifelog-calendar .rbc-time-content > * + * > *,
+.lifelog-calendar .rbc-timeslot-group,
+.lifelog-calendar .rbc-time-header-content,
+.lifelog-calendar .rbc-time-content {
+  border-color: #dadce0;
+}
+.lifelog-calendar .rbc-date-cell {
+  text-align: center;
+  padding-right: 0;
+}
+/* 오늘 칸 배경 강조는 없애고 날짜 원으로만 표시한다 */
+.lifelog-calendar .rbc-today {
+  background-color: transparent;
+}
+.lifelog-calendar .rbc-off-range-bg {
+  background-color: #fff;
+}
+.lifelog-calendar .rbc-event {
+  border: none;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.lifelog-calendar .rbc-event:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: 1px;
+}
+.lifelog-calendar .rbc-show-more {
+  color: #3c4043;
+  font-size: 12px;
+  font-weight: 500;
+  background: transparent;
+}
+.lifelog-calendar .rbc-current-time-indicator {
+  background-color: #ea4335;
+  height: 2px;
+}
+.lifelog-calendar .rbc-label {
+  font-size: 11px;
+  color: #70757a;
+}
+.lifelog-calendar .rbc-slot-selection {
+  background-color: rgba(26, 115, 232, 0.2);
+  color: #1a73e8;
+}
+.lifelog-calendar .rbc-overlay {
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border: none;
+}
