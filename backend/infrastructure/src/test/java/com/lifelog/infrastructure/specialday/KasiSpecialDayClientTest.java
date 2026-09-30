@@ -51,7 +51,7 @@ class KasiSpecialDayClientTest {
     private KasiSpecialDayClient newClient(String key) {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
-        return new KasiSpecialDayClient(builder.build(), new SpecialDayProperties(key, BASE, null, null));
+        return new KasiSpecialDayClient(builder.build(), new SpecialDayProperties(key, BASE, null));
     }
 
     private static String url(String operation, int pageNo) {
@@ -206,16 +206,27 @@ class KasiSpecialDayClientTest {
     }
 
     @Test
-    void fetchYear_whenMoreThanMaxPages_stopsAtMaxPagesWithWarn(CapturedOutput output) {
+    void fetchYear_whenMoreThanMaxPages_throwsInsteadOfReturningTruncatedData() {
         for (int page = 1; page <= KasiSpecialDayClient.MAX_PAGES; page++) {
             expect(KasiSpecialDayClient.OP_REST_DE, page,
                     ok(10_000, single(item("202601%02d".formatted(page), "휴일" + page, "Y"))));
         }
+
+        assertThatThrownBy(() -> client.fetchYear(YEAR))
+                .isInstanceOf(SpecialDaySourceException.class)
+                .hasMessageContaining("truncated");
+        server.verify();
+    }
+
+    @Test
+    void fetchYear_whenTotalCountMissing_treatsAsSinglePage() {
+        expect(KasiSpecialDayClient.OP_REST_DE, 1,
+                "{\"response\":{\"header\":{\"resultCode\":\"00\"},\"body\":{\"items\":{\"item\":"
+                        + item("20260101", "1월1일", "Y") + "}}}}");
         expect(KasiSpecialDayClient.OP_ANNIVERSARY, 1, ok(0, EMPTY));
         expect(KasiSpecialDayClient.OP_24_DIVISIONS, 1, ok(0, EMPTY));
 
-        assertThat(client.fetchYear(YEAR)).hasSize(KasiSpecialDayClient.MAX_PAGES);
-        assertThat(output).contains("최대 페이지");
+        assertThat(client.fetchYear(YEAR)).hasSize(1);
         server.verify();
     }
 

@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 
 import java.time.Clock;
@@ -51,6 +52,7 @@ import static org.mockito.Mockito.when;
 class SpecialDayServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-09-30T03:00:00Z");
+    private static final Duration LOCK_TIMEOUT = Duration.ofMillis(200);
 
     private MutableClock clock;
     private SpecialDaySource source;
@@ -66,18 +68,37 @@ class SpecialDayServiceTest {
         dayRepository = new FakeSpecialDayRepository();
         yearRepository = new FakeYearRepository();
         service = new SpecialDayService(source, dayRepository, yearRepository,
-                new SpecialDaySyncWriter(dayRepository, yearRepository), clock);
+                new SpecialDaySyncWriter(dayRepository, yearRepository), clock, LOCK_TIMEOUT);
     }
 
     private static SpecialDayData data(int year, int month, int day, SpecialDayKind kind, String name) {
         return new SpecialDayData(LocalDate.of(year, month, day), kind, name, kind == SpecialDayKind.HOLIDAY);
     }
 
-    private static final List<SpecialDayData> DATA_2026 = List.of(
-            data(2026, 1, 1, SpecialDayKind.HOLIDAY, "1월1일"),
+    /** 24절기: 3월 5일 경칩 + 나머지 매월 6일·21일 (검증 조건을 만족하는 최소 형태) */
+    private static List<SpecialDayData> solarTerms(int year) {
+        List<SpecialDayData> terms = new ArrayList<>();
+        for (int month = 1; month <= 12; month++) {
+            terms.add(month == 3
+                    ? data(year, 3, 5, SpecialDayKind.SOLAR_TERM, "경칩")
+                    : data(year, month, 6, SpecialDayKind.SOLAR_TERM, "절기" + month + "a"));
+            terms.add(data(year, month, 21, SpecialDayKind.SOLAR_TERM, "절기" + month + "b"));
+        }
+        return terms;
+    }
+
+    /** 1월1일 공휴일 + 24절기 + extra — 교체 전 검증을 통과하는 연도 데이터 */
+    private static List<SpecialDayData> validYear(int year, SpecialDayData... extra) {
+        List<SpecialDayData> days = new ArrayList<>();
+        days.add(data(year, 1, 1, SpecialDayKind.HOLIDAY, "1월1일"));
+        days.addAll(solarTerms(year));
+        days.addAll(List.of(extra));
+        return days;
+    }
+
+    private static final List<SpecialDayData> DATA_2026 = validYear(2026,
             data(2026, 3, 1, SpecialDayKind.HOLIDAY, "삼일절"),
-            data(2026, 3, 3, SpecialDayKind.ANNIVERSARY, "납세자의 날"),
-            data(2026, 3, 5, SpecialDayKind.SOLAR_TERM, "경칩"));
+            data(2026, 3, 3, SpecialDayKind.ANNIVERSARY, "납세자의 날"));
 
     private void markSynced(int year, SpecialDayData... days) {
         dayRepository.replaceYear(year, java.util.Arrays.stream(days).map(SpecialDay::from).toList());
@@ -90,17 +111,17 @@ class SpecialDayServiceTest {
     void list_whenYearNotSynced_fetchesSavesAndReturnsRangeFromDb(CapturedOutput output) {
         when(source.fetchYear(2026)).thenReturn(DATA_2026);
 
-        List<SpecialDayResponse> result = service.list(LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31));
+        List<SpecialDayResponse> result = service.list(LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 5));
 
         assertThat(result).containsExactly(
                 new SpecialDayResponse(LocalDate.of(2026, 3, 1), "삼일절", SpecialDayKind.HOLIDAY, true),
                 new SpecialDayResponse(LocalDate.of(2026, 3, 3), "납세자의 날", SpecialDayKind.ANNIVERSARY, false),
                 new SpecialDayResponse(LocalDate.of(2026, 3, 5), "경칩", SpecialDayKind.SOLAR_TERM, false));
-        assertThat(dayRepository.all(2026)).hasSize(4);
+        assertThat(dayRepository.all(2026)).hasSize(27);
         // synced_at 은 Asia/Seoul 현지 시각
         assertThat(yearRepository.findByYear(2026)).get()
                 .extracting(SpecialDayYear::getSyncedAt).isEqualTo(LocalDateTime.of(2026, 9, 30, 12, 0));
-        assertThat(output).contains("특일 동기화 완료: year=2026, count=4");
+        assertThat(output).contains("특일 동기화 완료: year=2026, count=27");
     }
 
     @Test
@@ -124,9 +145,9 @@ class SpecialDayServiceTest {
     @Test
     void list_whenRangeSpansTwoYears_syncsOnlyUnsyncedYear() {
         markSynced(2026, data(2026, 12, 25, SpecialDayKind.HOLIDAY, "기독탄신일"));
-        when(source.fetchYear(2027)).thenReturn(List.of(data(2027, 1, 1, SpecialDayKind.HOLIDAY, "1월1일")));
+        when(source.fetchYear(2027)).thenReturn(validYear(2027));
 
-        List<SpecialDayResponse> result = service.list(LocalDate.of(2026, 12, 1), LocalDate.of(2027, 1, 31));
+        List<SpecialDayResponse> result = service.list(LocalDate.of(2026, 12, 1), LocalDate.of(2027, 1, 5));
 
         assertThat(result).extracting(SpecialDayResponse::name).containsExactly("기독탄신일", "1월1일");
         verify(source, never()).fetchYear(2026);
@@ -174,7 +195,7 @@ class SpecialDayServiceTest {
     @Test
     void list_whenBackoffOnlyForFailedYear_otherYearStillFetched() {
         when(source.fetchYear(2026)).thenThrow(new SpecialDaySourceException("timeout"));
-        when(source.fetchYear(2027)).thenReturn(List.of());
+        when(source.fetchYear(2027)).thenReturn(validYear(2027));
 
         service.list(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31));
         service.list(LocalDate.of(2026, 12, 1), LocalDate.of(2027, 1, 31));
@@ -194,6 +215,80 @@ class SpecialDayServiceTest {
         verify(source, times(1)).fetchYear(2026);
         assertThat(yearRepository.findByYear(2026)).isEmpty();
         assertThat(output).contains("특일 저장 실패", "cause=IllegalStateException");
+    }
+
+    @Test
+    void list_whenDbFailsWithDataAccessException_logsErrorWithStackTrace(CapturedOutput output) {
+        when(source.fetchYear(2026)).thenReturn(DATA_2026);
+        dayRepository.failure = new DataIntegrityViolationException("Duplicate entry");
+
+        assertThat(service.list(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31))).isEmpty();
+
+        assertThat(yearRepository.findByYear(2026)).isEmpty();
+        assertThat(output).contains("특일 저장 실패(DB)", "year=2026",
+                "org.springframework.dao.DataIntegrityViolationException: Duplicate entry", "\tat ");
+    }
+
+    // ---------- 교체 전 결과 검증 ----------
+
+    @Test
+    void list_whenSolarTermsNot24_rejectsKeepsExistingDataAndBacksOff(CapturedOutput output) {
+        dayRepository.replaceYear(2026, List.of(SpecialDay.from(data(2026, 3, 1, SpecialDayKind.HOLIDAY, "삼일절"))));
+        List<SpecialDayData> missingOne = new ArrayList<>(validYear(2026));
+        missingOne.removeIf(d -> d.name().equals("절기12b"));
+        when(source.fetchYear(2026)).thenReturn(missingOne);
+        LocalDate from = LocalDate.of(2026, 3, 1);
+        LocalDate to = LocalDate.of(2026, 3, 1);
+
+        assertThat(service.list(from, to)).extracting(SpecialDayResponse::name).containsExactly("삼일절");
+        service.list(from, to);
+
+        verify(source, times(1)).fetchYear(2026);
+        assertThat(yearRepository.findByYear(2026)).isEmpty();
+        assertThat(dayRepository.all(2026)).hasSize(1);
+        assertThat(output).contains("특일 외부 조회 실패", "solarTerms=23");
+    }
+
+    @Test
+    void list_whenSolarTermsMoreThan24_rejects() {
+        when(source.fetchYear(2026)).thenReturn(validYear(2026, data(2026, 3, 7, SpecialDayKind.SOLAR_TERM, "추가절기")));
+
+        assertThat(service.list(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31))).isEmpty();
+        assertThat(yearRepository.findByYear(2026)).isEmpty();
+    }
+
+    @Test
+    void list_whenNoHolidays_rejectsWithoutMarkingSynced(CapturedOutput output) {
+        when(source.fetchYear(2026)).thenReturn(solarTerms(2026));
+
+        assertThat(service.list(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31))).isEmpty();
+
+        assertThat(yearRepository.findByYear(2026)).isEmpty();
+        assertThat(dayRepository.all(2026)).isEmpty();
+        assertThat(output).contains("no holidays");
+    }
+
+    @Test
+    void list_whenSourceReportsTruncatedResult_keepsExistingData(CapturedOutput output) {
+        dayRepository.replaceYear(2026, List.of(SpecialDay.from(data(2026, 3, 1, SpecialDayKind.HOLIDAY, "삼일절"))));
+        when(source.fetchYear(2026)).thenThrow(new SpecialDaySourceException(
+                "special-day getAnniversaryInfo failed: year=2026, result exceeds 5 pages (truncated)"));
+
+        assertThat(service.list(LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 1))).hasSize(1);
+        assertThat(yearRepository.findByYear(2026)).isEmpty();
+        assertThat(output).contains("truncated");
+    }
+
+    @Test
+    void refresh_whenInvalidResult_returnsFalseAndKeepsSyncedData() {
+        markSynced(2026, data(2026, 1, 1, SpecialDayKind.HOLIDAY, "1월1일"));
+        LocalDateTime syncedAt = yearRepository.findByYear(2026).orElseThrow().getSyncedAt();
+        when(source.fetchYear(2026)).thenReturn(List.of());
+
+        assertThat(service.refresh(2026)).isFalse();
+
+        assertThat(dayRepository.all(2026)).extracting(SpecialDay::getName).containsExactly("1월1일");
+        assertThat(yearRepository.findByYear(2026).orElseThrow().getSyncedAt()).isEqualTo(syncedAt);
     }
 
     // ---------- 키 미설정 / 허용 연도 ----------
@@ -225,17 +320,17 @@ class SpecialDayServiceTest {
 
     @Test
     void list_whenSourceReturnsDuplicatesOrOtherYear_savesUniqueItemsOfThatYearOnly() {
-        when(source.fetchYear(2026)).thenReturn(List.of(
+        when(source.fetchYear(2026)).thenReturn(validYear(2026,
                 data(2026, 7, 17, SpecialDayKind.ANNIVERSARY, "제헌절"),
                 data(2026, 7, 17, SpecialDayKind.ANNIVERSARY, "제헌절"),
                 data(2026, 7, 17, SpecialDayKind.HOLIDAY, "제헌절"),
                 data(2027, 1, 1, SpecialDayKind.HOLIDAY, "1월1일")));
 
-        List<SpecialDayResponse> result = service.list(LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31));
+        List<SpecialDayResponse> result = service.list(LocalDate.of(2026, 7, 17), LocalDate.of(2026, 7, 17));
 
         assertThat(result).extracting(SpecialDayResponse::kind)
                 .containsExactly(SpecialDayKind.HOLIDAY, SpecialDayKind.ANNIVERSARY);
-        assertThat(dayRepository.all(2026)).hasSize(2);
+        assertThat(dayRepository.all(2026)).hasSize(27);
     }
 
     // ---------- 입력 검증 ----------
@@ -275,6 +370,8 @@ class SpecialDayServiceTest {
 
     @Test
     void list_whenConcurrentRequestsForUnsyncedYear_fetchesOnce() throws Exception {
+        service = new SpecialDayService(source, dayRepository, yearRepository,
+                new SpecialDaySyncWriter(dayRepository, yearRepository), clock, Duration.ofSeconds(5));
         CountDownLatch entered = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         when(source.fetchYear(2026)).thenAnswer(inv -> {
@@ -294,15 +391,64 @@ class SpecialDayServiceTest {
         });
         // 두 번째 요청이 연도 락에서 대기할 때까지 기다린 뒤 첫 요청을 끝낸다
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while ((secondThread[0] == null || secondThread[0].getState() != Thread.State.WAITING)
+        // tryLock(timeout) 대기 중이면 TIMED_WAITING
+        while ((secondThread[0] == null || secondThread[0].getState() != Thread.State.TIMED_WAITING)
                 && System.nanoTime() < deadline) {
             Thread.onSpinWait();
         }
         release.countDown();
 
-        assertThat(first.get(5, TimeUnit.SECONDS)).hasSize(4);
-        assertThat(second.get(5, TimeUnit.SECONDS)).hasSize(4);
+        assertThat(first.get(5, TimeUnit.SECONDS)).hasSize(27);
+        assertThat(second.get(5, TimeUnit.SECONDS)).hasSize(27);
         verify(source, times(1)).fetchYear(2026);
+    }
+
+    @Test
+    void list_whenYearLockNotAcquiredInTime_returnsDbDataWithWarn(CapturedOutput output) throws Exception {
+        dayRepository.replaceYear(2026, List.of(SpecialDay.from(data(2026, 3, 1, SpecialDayKind.HOLIDAY, "삼일절"))));
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(source.fetchYear(2026)).thenAnswer(inv -> {
+            entered.countDown();
+            assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
+            return DATA_2026;
+        });
+        LocalDate day = LocalDate.of(2026, 3, 1);
+
+        CompletableFuture<List<SpecialDayResponse>> first = CompletableFuture.supplyAsync(() -> service.list(day, day));
+        assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+        try {
+            // 첫 요청이 락을 쥔 채 외부 호출 중 → 두 번째 요청은 LOCK_TIMEOUT 뒤 DB 데이터만 반환
+            List<SpecialDayResponse> second = service.list(day, day);
+
+            assertThat(second).extracting(SpecialDayResponse::name).containsExactly("삼일절");
+            assertThat(output).contains("특일 연도 락 대기 시간 초과", "year=2026", "timeoutMs=200");
+        } finally {
+            release.countDown();
+        }
+        assertThat(first.get(5, TimeUnit.SECONDS)).extracting(SpecialDayResponse::name).containsExactly("삼일절");
+        verify(source, times(1)).fetchYear(2026);
+    }
+
+    @Test
+    void list_whenInterruptedWhileWaitingForLock_skipsFetchAndKeepsInterruptFlag() {
+        Thread.currentThread().interrupt();
+        try {
+            assertThat(service.list(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31))).isEmpty();
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        } finally {
+            Thread.interrupted();
+        }
+        verify(source, never()).fetchYear(anyInt());
+    }
+
+    @Test
+    void publicConstructor_whenCreated_usesDefaultLockTimeout() {
+        SpecialDayService defaultService = new SpecialDayService(source, dayRepository, yearRepository,
+                new SpecialDaySyncWriter(dayRepository, yearRepository), clock);
+
+        assertThat(defaultService.currentYear()).isEqualTo(2026);
+        assertThat(SpecialDayService.LOCK_TIMEOUT).isEqualTo(Duration.ofSeconds(3));
     }
 
     // ---------- refresh (정기 동기화) ----------
@@ -314,7 +460,7 @@ class SpecialDayServiceTest {
 
         assertThat(service.refresh(2026)).isTrue();
 
-        assertThat(dayRepository.all(2026)).extracting(SpecialDay::getName).doesNotContain("옛 데이터").hasSize(4);
+        assertThat(dayRepository.all(2026)).extracting(SpecialDay::getName).doesNotContain("옛 데이터").hasSize(27);
         assertThat(yearRepository.findByYear(2026)).get()
                 .extracting(SpecialDayYear::getSyncedAt).isEqualTo(LocalDateTime.of(2026, 9, 30, 12, 0));
     }
@@ -392,6 +538,7 @@ class SpecialDayServiceTest {
     static final class FakeSpecialDayRepository implements SpecialDayRepository {
         private final Map<Integer, List<SpecialDay>> byYear = new ConcurrentHashMap<>();
         volatile boolean failOnReplace;
+        volatile RuntimeException failure;
 
         @Override
         public List<SpecialDay> findByDateBetween(LocalDate from, LocalDate to) {
@@ -409,6 +556,9 @@ class SpecialDayServiceTest {
         public void replaceYear(int year, List<SpecialDay> days) {
             if (failOnReplace) {
                 throw new IllegalStateException("db down");
+            }
+            if (failure != null) {
+                throw failure;
             }
             byYear.put(year, List.copyOf(days));
         }

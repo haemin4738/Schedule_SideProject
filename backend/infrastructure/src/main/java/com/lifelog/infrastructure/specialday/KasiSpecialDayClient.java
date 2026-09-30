@@ -152,7 +152,7 @@ public class KasiSpecialDayClient implements SpecialDaySource {
 
     // ---------- 호출 ----------
 
-    /** totalCount 가 한 페이지(numOfRows)를 넘으면 pageNo 를 올려 최대 {@link #MAX_PAGES} 페이지까지 받는다 */
+    /** totalCount 가 한 페이지(numOfRows)를 넘으면 pageNo 를 올려 최대 {@link #MAX_PAGES} 페이지까지 받는다. 넘으면 실패 */
     private List<JsonNode> fetchAll(String operation, int year) {
         List<JsonNode> items = new ArrayList<>();
         for (int pageNo = 1; pageNo <= MAX_PAGES; pageNo++) {
@@ -162,9 +162,8 @@ public class KasiSpecialDayClient implements SpecialDaySource {
                 return items;
             }
         }
-        log.warn("특일 응답이 최대 페이지 수를 넘어 일부만 사용합니다: operation={}, year={}, maxPages={}",
-                operation, year, MAX_PAGES);
-        return items;
+        // 잘린 데이터로 연도를 교체하지 않는다(부분 갱신 금지)
+        throw failure(operation, year, "result exceeds " + MAX_PAGES + " pages (truncated)");
     }
 
     private Page fetchPage(String operation, int year, int pageNo) {

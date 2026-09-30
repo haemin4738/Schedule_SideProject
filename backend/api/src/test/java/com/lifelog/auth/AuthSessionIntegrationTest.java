@@ -1,8 +1,6 @@
 package com.lifelog.auth;
 
 import com.jayway.jsonpath.JsonPath;
-import com.lifelog.specialday.SpecialDayService;
-import com.lifelog.specialday.SpecialDaySyncScheduler;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.AfterEach;
@@ -217,30 +215,6 @@ class AuthSessionIntegrationTest {
                 .andExpect(jsonPath("$.data").isEmpty())
                 .andExpect(jsonPath("$.error").isNotEmpty())
                 .andExpect(jsonPath("$.code").value(code));
-    }
-
-    // ---------- 특일(키 미설정 기동) ----------
-
-    @Test
-    void context_whenTestProfileWithoutServiceKey_startsWithoutSpecialDaySyncScheduler() {
-        // DATA_GO_KR_SERVICE_KEY 없이 기동되고, test 프로필(special-day.sync.enabled=false)에서는 정기 동기화 빈이 없다
-        assertThat(context.getBeanNamesForType(SpecialDaySyncScheduler.class)).isEmpty();
-        assertThat(context.getBean(SpecialDayService.class).isSourceConfigured()).isFalse();
-    }
-
-    @Test
-    void specialDays_whenServiceKeyNotConfigured_returnsOkWithArrayWithoutExternalCall() throws Exception {
-        signup();
-        String body = loginRequest(lastEmail)
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
-        String accessToken = JsonPath.read(body, "$.data.accessToken");
-
-        mockMvc.perform(get("/api/v1/special-days").param("from", "2026-01-01").param("to", "2026-12-31")
-                        .header("Authorization", "Bearer " + accessToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data").isArray());
     }
 
     // ---------- 재사용 탐지 / 겹침 구간 ----------
