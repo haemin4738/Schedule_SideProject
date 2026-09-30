@@ -10,6 +10,7 @@ import {
   CATEGORY_DEFAULT_COLORS,
   EVENT_CATEGORY_OPTIONS,
   EVENT_COLORS,
+  HEX_COLOR,
 } from '@/constants/eventCategory'
 import dayjs from 'dayjs'
 import { useState } from 'react'
@@ -44,7 +45,8 @@ const toFormValues = (event: EventDetail | null, start: Date, end: Date, allDay:
       endDate: e.format('YYYY-MM-DD'),
       endTime: e.format('HH:mm'),
       eventCategory: event.eventCategory ?? 'PERSONAL',
-      color: event.color ?? '',
+      // 형식이 잘못된 색은 '카테고리 기본 색'으로 정규화한다 (그대로 다시 저장하지 않게)
+      color: event.color && HEX_COLOR.test(event.color) ? event.color : '',
       location: event.location ?? '',
       description: event.description ?? '',
     }
@@ -65,7 +67,6 @@ const toFormValues = (event: EventDetail | null, start: Date, end: Date, allDay:
 
 export default function EventFormModal({ event, defaultStart, defaultEnd, defaultAllDay = false, onClose, onSaved }: Props) {
   const isEdit = event !== null
-  const dialogRef = useDialog<HTMLDivElement>(onClose)
   const [error, setError] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -75,7 +76,7 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
     control,
     setValue,
     getValues,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<FormValues>({ defaultValues: toFormValues(event, defaultStart, defaultEnd, defaultAllDay) })
   const allDay = useWatch({ control, name: 'allDay' })
   const category = useWatch({ control, name: 'eventCategory' })
@@ -116,12 +117,21 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
   }
 
   const busy = isSubmitting || deleting
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false)
+
+  // 저장·삭제 중에는 닫지 않고(결과 오류를 놓치지 않게), 입력한 내용이 있으면 버릴지 먼저 묻는다
+  const requestClose = () => {
+    if (busy) return
+    if (isDirty) setConfirmingDiscard(true)
+    else onClose()
+  }
+  const dialogRef = useDialog<HTMLDivElement>(requestClose)
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
+        if (e.target === e.currentTarget) requestClose()
       }}
     >
       <div
@@ -176,7 +186,7 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
             <label htmlFor="event-start-date" className="text-sm text-gray-600">
               시작
             </label>
-            <input id="event-start-date" type="date" {...register('startDate', { required: '시작 날짜를 입력해 주세요.' })} className={inputClass} />
+            <input id="event-start-date" type="date" {...register('startDate', { required: '시작 날짜를 입력해 주세요.', deps: ['endDate'] })} className={inputClass} />
             {allDay ? (
               <span />
             ) : (
@@ -184,7 +194,7 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
                 <label htmlFor="event-start-time" className="sr-only">
                   시작 시간
                 </label>
-                <input id="event-start-time" type="time" {...register('startTime', { required: true })} className={inputClass} />
+                <input id="event-start-time" type="time" {...register('startTime', { required: true, deps: ['endDate'] })} className={inputClass} />
               </>
             )}
             <label htmlFor="event-end-date" className="text-sm text-gray-600">
@@ -316,7 +326,8 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={requestClose}
+                disabled={busy}
                 className="rounded-md px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
               >
                 취소
@@ -331,6 +342,28 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
             </div>
           </div>
         </form>
+
+        {confirmingDiscard && (
+          <div role="alert" className="mt-4 flex items-center justify-between gap-2 rounded-md bg-amber-50 px-3 py-2">
+            <span className="text-sm text-amber-900">작성 중인 내용을 버릴까요?</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-md bg-amber-600 px-3 py-1.5 text-sm text-white hover:bg-amber-700"
+              >
+                버리기
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingDiscard(false)}
+                className="rounded-md px-3 py-1.5 text-sm text-amber-900 hover:bg-amber-100"
+              >
+                계속 작성
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

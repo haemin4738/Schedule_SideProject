@@ -15,7 +15,15 @@ import { useAuthStore } from '@/store/authStore'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ko'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Calendar, dayjsLocalizer, type Formats, type Messages, type SlotInfo, type View } from 'react-big-calendar'
+import {
+  Calendar,
+  dayjsLocalizer,
+  type EventProps,
+  type Formats,
+  type Messages,
+  type SlotInfo,
+  type View,
+} from 'react-big-calendar'
 import { Link } from 'react-router-dom'
 
 dayjs.locale('ko')
@@ -80,7 +88,10 @@ export default function CalendarPage() {
       })
       .catch((err) => {
         // 401은 client 인터셉터가 재발급/로그아웃을 처리한다
-        if (seq === requestSeq.current) setError(getApiErrorMessage(err, '일정을 불러오지 못했습니다.'))
+        if (seq !== requestSeq.current) return
+        // 이전 기간의 일정이 오류와 함께 남아 있지 않게 비운다
+        setEvents([])
+        setError(getApiErrorMessage(err, '일정을 불러오지 못했습니다.'))
       })
   }, [range])
 
@@ -123,15 +134,42 @@ export default function CalendarPage() {
     }
   }
 
-  const onSelectEvent = async (event: CalendarEvent) => {
+  // 일정을 빠르게 연달아 누르면 마지막으로 누른 일정만 연다
+  const selectSeq = useRef(0)
+  const onSelectEvent = useCallback(async (event: CalendarEvent) => {
+    const seq = ++selectSeq.current
     try {
       // 목록에는 설명·장소가 없으므로 수정 전에 단건을 조회한다
       const { data } = await getEvent(event.id)
-      setModal({ mode: 'edit', event: data.data })
+      if (seq === selectSeq.current) setModal({ mode: 'edit', event: data.data })
     } catch (err) {
-      setError(getApiErrorMessage(err, '일정을 불러오지 못했습니다.'))
+      if (seq === selectSeq.current) setError(getApiErrorMessage(err, '일정을 불러오지 못했습니다.'))
     }
-  }
+  }, [])
+
+  // 월간 보기의 일정은 react-big-calendar 가 포커스를 주지 않으므로 키보드로 열 수 있는 요소로 감싼다
+  const MonthEvent = useMemo(
+    () =>
+      function MonthEvent({ event, title }: EventProps<CalendarEvent>) {
+        return (
+          <span
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                e.stopPropagation()
+                void onSelectEvent(event)
+              }
+            }}
+            className="block truncate outline-none focus-visible:ring-2 focus-visible:ring-white"
+          >
+            {title}
+          </span>
+        )
+      },
+    [onSelectEvent],
+  )
 
   const onCreateClick = () => {
     const start = dayjs().add(1, 'hour').startOf('hour')
@@ -193,13 +231,18 @@ export default function CalendarPage() {
           popup
           onSelectSlot={onSelectSlot}
           onSelectEvent={onSelectEvent}
+          // 주·일 보기의 일정은 포커스는 되지만 Enter 로 열리지 않아 직접 연결한다
+          onKeyPressEvent={(event, e) => {
+            const { key } = e as React.KeyboardEvent<HTMLElement>
+            if (key === 'Enter' || key === ' ') void onSelectEvent(event)
+          }}
           scrollToTime={dayjs().hour(8).minute(0).toDate()}
           eventPropGetter={(event) => ({
             style: { backgroundColor: event.color, color: readableTextColor(event.color) },
           })}
           components={{
             toolbar: CalendarToolbar,
-            month: { header: MonthWeekdayHeader, dateHeader: MonthDateHeader },
+            month: { header: MonthWeekdayHeader, dateHeader: MonthDateHeader, event: MonthEvent },
             week: { header: DayColumnHeader },
             day: { header: DayColumnHeader },
           }}

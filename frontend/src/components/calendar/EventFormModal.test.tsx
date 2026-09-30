@@ -197,6 +197,60 @@ describe('EventFormModal', () => {
     expect(screen.queryByRole('button', { name: '삭제' })).not.toBeInTheDocument()
   })
 
+  it('requestClose_dirtyForm_asksBeforeDiscarding', async () => {
+    const user = userEvent.setup()
+    const props = renderCreate()
+
+    await user.type(screen.getByLabelText('제목'), '작성 중')
+    await user.keyboard('{Escape}')
+
+    expect(props.onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('작성 중인 내용을 버릴까요?')
+    await user.click(screen.getByRole('button', { name: '계속 작성' }))
+    expect(screen.queryByText('작성 중인 내용을 버릴까요?')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('제목')).toHaveValue('작성 중')
+
+    await user.click(screen.getByRole('button', { name: '취소' }))
+    await user.click(screen.getByRole('button', { name: '버리기' }))
+    expect(props.onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('requestClose_whileSaving_ignoresClose', async () => {
+    const user = userEvent.setup()
+    mockedCreate.mockReturnValue(new Promise(() => {}))
+    const props = renderCreate()
+
+    await user.type(screen.getByLabelText('제목'), '회의')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    expect(await screen.findByRole('button', { name: '저장 중...' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '취소' })).toBeDisabled()
+    await user.keyboard('{Escape}')
+    expect(props.onClose).not.toHaveBeenCalled()
+    expect(screen.queryByText('작성 중인 내용을 버릴까요?')).not.toBeInTheDocument()
+  })
+
+  it('render_editWithInvalidStoredColor_selectsCategoryDefault', () => {
+    renderCreate({ event: { ...detail, color: 'red' } })
+    expect(screen.getByRole('radio', { name: '카테고리 기본 색' })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('onChange_startMovedBeforeEnd_clearsEndError', async () => {
+    const user = userEvent.setup()
+    renderCreate()
+
+    await user.type(screen.getByLabelText('제목'), '회의')
+    await user.clear(screen.getByLabelText('종료 시간'))
+    await user.type(screen.getByLabelText('종료 시간'), '08:00')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+    expect(await screen.findByText('종료는 시작보다 빠를 수 없습니다.')).toBeInTheDocument()
+
+    await user.clear(screen.getByLabelText('시작 시간'))
+    await user.type(screen.getByLabelText('시작 시간'), '07:00')
+
+    await waitFor(() => expect(screen.queryByText('종료는 시작보다 빠를 수 없습니다.')).not.toBeInTheDocument())
+  })
+
   it('onClose_cancelOrEscape_callsOnClose', async () => {
     const user = userEvent.setup()
     const props = renderCreate()

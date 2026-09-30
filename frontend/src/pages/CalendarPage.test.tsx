@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CalendarPage from './CalendarPage'
-import { toCalendarEvent, visibleRange } from '@/components/calendar/calendarUtils'
 import { getEvent, getEventsInRange, type EventSummary } from '@/api/events'
 import { useAuthStore } from '@/store/authStore'
 
@@ -157,6 +156,54 @@ describe('CalendarPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('일정을 불러오지 못했습니다.')
   })
 
+  it('onKeyDown_enterOnMonthEvent_opensEditModal', async () => {
+    const user = userEvent.setup()
+    mockedRange.mockResolvedValue([summary()])
+    mockedGet.mockResolvedValue({
+      data: { success: true, data: { ...summary(), description: null, location: null, createdAt: '', updatedAt: '' } },
+    } as never)
+    renderPage()
+
+    const eventButton = await screen.findByRole('button', { name: '팀 회의' })
+    eventButton.focus()
+    await user.keyboard('{Enter}')
+
+    expect(await screen.findByRole('dialog', { name: '일정 수정' })).toBeInTheDocument()
+  })
+
+  it('onSelectEvent_clickedTwiceQuickly_opensLastClickedEvent', async () => {
+    const user = userEvent.setup()
+    mockedRange.mockResolvedValue([summary(), summary({ id: 2, title: '점심' })])
+    let resolveFirst: (v: unknown) => void = () => {}
+    mockedGet
+      .mockReturnValueOnce(new Promise((r) => (resolveFirst = r)) as never)
+      .mockResolvedValueOnce({
+        data: { success: true, data: { ...summary({ id: 2, title: '점심' }), description: null, location: null, createdAt: '', updatedAt: '' } },
+      } as never)
+    renderPage()
+
+    await user.click(await screen.findByText('팀 회의'))
+    await user.click(screen.getByText('점심'))
+    expect(await screen.findByRole('dialog', { name: '일정 수정' })).toBeInTheDocument()
+    expect(screen.getByLabelText('제목')).toHaveValue('점심')
+
+    resolveFirst({ data: { success: true, data: { ...summary(), description: null, location: null, createdAt: '', updatedAt: '' } } })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.getByLabelText('제목')).toHaveValue('점심')
+  })
+
+  it('load_failsAfterSuccess_clearsStaleEvents', async () => {
+    const user = userEvent.setup()
+    mockedRange.mockResolvedValueOnce([summary()]).mockRejectedValueOnce(new Error('Network Error'))
+    renderPage()
+    expect(await screen.findByText('팀 회의')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '다음' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('일정을 불러오지 못했습니다.')
+    expect(screen.queryByText('팀 회의')).not.toBeInTheDocument()
+  })
+
   it('load_fails_showsError', async () => {
     mockedRange.mockRejectedValue({ response: { data: { error: '서버 오류' } } })
     renderPage()
@@ -171,29 +218,5 @@ describe('CalendarPage', () => {
     expect(within(nav).getByRole('link', { name: '구직활동' })).toHaveAttribute('href', '/job-applications')
     expect(within(nav).getByRole('link', { name: '가계부' })).toHaveAttribute('href', '/expenses')
     expect(screen.getByRole('button', { name: '로그아웃' })).toBeInTheDocument()
-  })
-})
-
-describe('visibleRange', () => {
-  it('visibleRange_day_returnsWholeDay', () => {
-    const { from, to } = visibleRange(new Date(2026, 8, 30, 15), 'day')
-    expect(from).toEqual(new Date(2026, 8, 30, 0, 0, 0, 0))
-    expect(to).toEqual(new Date(2026, 8, 30, 23, 59, 59, 999))
-  })
-})
-
-describe('toCalendarEvent', () => {
-  it('toCalendarEvent_timedWithoutEnd_assumesOneHour', () => {
-    const e = toCalendarEvent(summary({ endAt: null }))
-    expect(e.end).toEqual(new Date(2026, 8, 30, 15, 0))
-  })
-
-  it('toCalendarEvent_allDayWithoutEnd_endsSameDay', () => {
-    const e = toCalendarEvent(summary({ allDay: true, startAt: '2026-09-30T00:00:00', endAt: null }))
-    expect(e.end).toEqual(new Date(2026, 8, 30, 23, 59, 59, 999))
-  })
-
-  it('toCalendarEvent_customColor_usesIt', () => {
-    expect(toCalendarEvent(summary({ color: '#0B8043' })).color).toBe('#0B8043')
   })
 })

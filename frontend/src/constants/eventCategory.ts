@@ -35,7 +35,7 @@ export const CATEGORY_DEFAULT_COLORS: Record<EventCategory, string> = {
   OTHER: '#616161',
 }
 
-const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/
+export const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/
 
 /** 일정 표시 색: 직접 고른 색(형식이 올바를 때) → 카테고리 기본 색 → 개인 기본 색 */
 export const resolveEventColor = (color: string | null | undefined, category: EventCategory | null | undefined): string =>
