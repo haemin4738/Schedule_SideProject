@@ -41,7 +41,7 @@ class SocialAccountRepositoryImplTest {
     @TestConfiguration
     @ComponentScan(basePackages = "com.lifelog.infrastructure.user",
             excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE,
-                    classes = RedisPendingSocialLinkStore.class))
+                    classes = {RedisPendingSocialLinkStore.class, RedisRefreshSessionStore.class}))
     static class TestConfig {
     }
 
