@@ -206,6 +206,7 @@ describe('EventFormModal', () => {
 
     expect(props.onClose).not.toHaveBeenCalled()
     expect(screen.getByRole('alert')).toHaveTextContent('작성 중인 내용을 버릴까요?')
+    expect(screen.getByRole('button', { name: '계속 작성' })).toHaveFocus()
     await user.click(screen.getByRole('button', { name: '계속 작성' }))
     expect(screen.queryByText('작성 중인 내용을 버릴까요?')).not.toBeInTheDocument()
     expect(screen.getByLabelText('제목')).toHaveValue('작성 중')

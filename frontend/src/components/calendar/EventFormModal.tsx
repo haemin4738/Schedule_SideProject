@@ -356,6 +356,8 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
               </button>
               <button
                 type="button"
+                // 확인 창이 뜨면 포커스를 안전한 쪽(계속 작성)으로 옮긴다
+                autoFocus
                 onClick={() => setConfirmingDiscard(false)}
                 className="rounded-md px-3 py-1.5 text-sm text-amber-900 hover:bg-amber-100"
               >

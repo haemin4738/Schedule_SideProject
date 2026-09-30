@@ -147,10 +147,10 @@ export default function CalendarPage() {
     }
   }, [])
 
-  // 월간 보기의 일정은 react-big-calendar 가 포커스를 주지 않으므로 키보드로 열 수 있는 요소로 감싼다
-  const MonthEvent = useMemo(
+  // 월간 보기와 주·일 보기의 종일 줄 일정은 react-big-calendar 가 포커스를 주지 않으므로 키보드로 열 수 있는 요소로 감싼다
+  const EventLabel = useMemo(
     () =>
-      function MonthEvent({ event, title }: EventProps<CalendarEvent>) {
+      function EventLabel({ event, title }: EventProps<CalendarEvent>) {
         return (
           <span
             role="button"
@@ -162,7 +162,7 @@ export default function CalendarPage() {
                 void onSelectEvent(event)
               }
             }}
-            className="block truncate outline-none focus-visible:ring-2 focus-visible:ring-white"
+            className="block truncate outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
           >
             {title}
           </span>
@@ -233,8 +233,11 @@ export default function CalendarPage() {
           onSelectEvent={onSelectEvent}
           // 주·일 보기의 일정은 포커스는 되지만 Enter 로 열리지 않아 직접 연결한다
           onKeyPressEvent={(event, e) => {
-            const { key } = e as React.KeyboardEvent<HTMLElement>
-            if (key === 'Enter' || key === ' ') void onSelectEvent(event)
+            const ke = e as React.KeyboardEvent<HTMLElement>
+            if (ke.key === 'Enter' || ke.key === ' ') {
+              ke.preventDefault()
+              void onSelectEvent(event)
+            }
           }}
           scrollToTime={dayjs().hour(8).minute(0).toDate()}
           eventPropGetter={(event) => ({
@@ -242,9 +245,9 @@ export default function CalendarPage() {
           })}
           components={{
             toolbar: CalendarToolbar,
-            month: { header: MonthWeekdayHeader, dateHeader: MonthDateHeader, event: MonthEvent },
-            week: { header: DayColumnHeader },
-            day: { header: DayColumnHeader },
+            month: { header: MonthWeekdayHeader, dateHeader: MonthDateHeader, event: EventLabel },
+            week: { header: DayColumnHeader, event: EventLabel },
+            day: { header: DayColumnHeader, event: EventLabel },
           }}
           style={{ height: '100%' }}
         />
