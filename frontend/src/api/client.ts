@@ -31,12 +31,26 @@ export const SESSION_REVOKED_NOTICE = '보안을 위해 모든 기기에서 로�
 // 동시에 여러 요청이 401을 받아도 refresh는 한 번만 호출한다
 let refreshing: Promise<string> | null = null
 
+/** refresh 응답을 기다리는 동안 로그아웃된 경우 — 이미 로그아웃 상태이므로 다시 로그아웃 처리하지 않는다 */
+class SessionEndedDuringRefresh extends Error {
+  constructor() {
+    super('refresh 중 로그아웃됨')
+  }
+}
+
 const refreshAccessToken = async (): Promise<string> => {
   const refreshToken = localStorage.getItem('refreshToken')
   if (!refreshToken) throw new Error('refresh token 없음')
   const { data } = await axios.post(`${baseURL}/api/v1/auth/refresh`, { refreshToken })
-  // 응답을 기다리는 동안 로그아웃(또는 다른 탭의 재로그인)으로 토큰이 바뀌었으면 결과를 버린다 — 로그아웃한 화면이 되살아나지 않게
-  if (localStorage.getItem('refreshToken') !== refreshToken) throw new Error('refresh 중 세션이 바뀜')
+  const current = localStorage.getItem('refreshToken')
+  // 응답을 기다리는 동안 로그아웃했으면 결과를 버린다 — 로그아웃한 화면이 되살아나지 않게
+  if (current === null) throw new SessionEndedDuringRefresh()
+  // 다른 탭이 먼저 갱신해 저장했으면 그 토큰을 그대로 쓴다 (덮어쓰지도, 로그아웃하지도 않는다)
+  if (current !== refreshToken) {
+    const accessToken = localStorage.getItem('accessToken') ?? data.data.accessToken
+    useAuthStore.setState({ accessToken })
+    return accessToken
+  }
   // 백엔드가 refresh 토큰도 새로 발급하므로 둘 다 저장한다
   useAuthStore.getState().login(data.data.accessToken, data.data.refreshToken)
   return data.data.accessToken
@@ -66,7 +80,9 @@ export const refreshSession = async (): Promise<string> => {
     return await refreshing
   } catch (refreshError) {
     const status = axios.isAxiosError(refreshError) ? refreshError.response?.status : undefined
-    if (status === 401 && getApiErrorCode(refreshError) === SESSION_REVOKED_CODE) {
+    if (refreshError instanceof SessionEndedDuringRefresh) {
+      // 이미 로그아웃됨 — 로그아웃 뒤 곧바로 다시 로그인한 토큰까지 지우지 않도록 아무것도 하지 않는다
+    } else if (status === 401 && getApiErrorCode(refreshError) === SESSION_REVOKED_CODE) {
       useAuthStore.getState().logout(getApiErrorMessage(refreshError, SESSION_REVOKED_NOTICE))
     } else if (!axios.isAxiosError(refreshError) || status === 401 || status === 403) {
       useAuthStore.getState().logout()

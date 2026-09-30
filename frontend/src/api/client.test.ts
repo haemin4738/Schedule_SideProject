@@ -73,6 +73,42 @@ describe('api client 401 처리', () => {
     expect(localStorage.getItem('refreshToken')).toBeNull()
   })
 
+  it('refreshSession_otherTabRotatedWhileInFlight_usesStoredTokensWithoutLogout', async () => {
+    adapter.mockImplementation(async (config) => {
+      if (config.headers.Authorization === 'Bearer tab1-access') return ok(config, { data: 'events' })
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockImplementation(async () => {
+      // 이 탭의 refresh 응답이 오기 전에 다른 탭이 먼저 갱신해 저장한다
+      localStorage.setItem('accessToken', 'tab1-access')
+      localStorage.setItem('refreshToken', 'tab1-refresh')
+      return { data: { data: { accessToken: 'tab2-access', refreshToken: 'tab2-refresh' } } }
+    })
+
+    const res = await client.get('/api/v1/events')
+
+    expect(res.data).toEqual({ data: 'events' })
+    expect(localStorage.getItem('accessToken')).toBe('tab1-access')
+    expect(localStorage.getItem('refreshToken')).toBe('tab1-refresh')
+    expect(useAuthStore.getState().accessToken).toBe('tab1-access')
+  })
+
+  it('refreshSession_logoutThenReloginWhileInFlight_keepsNewLogin', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockImplementation(async () => {
+      useAuthStore.getState().logout()
+      useAuthStore.getState().login('relogin-access', 'relogin-refresh')
+      return { data: { data: { accessToken: 'stale-access', refreshToken: 'stale-refresh' } } }
+    })
+
+    await client.get('/api/v1/events').catch(() => {})
+
+    expect(localStorage.getItem('refreshToken')).toBe('relogin-refresh')
+    expect(useAuthStore.getState().accessToken).toBe('relogin-access')
+  })
+
   it('동시에 여러 요청이 401을 받아도 refresh는 한 번만 호출한다', async () => {
     adapter.mockImplementation(async (config) => {
       if (config.headers.Authorization === 'Bearer new-access') return ok(config, {})
