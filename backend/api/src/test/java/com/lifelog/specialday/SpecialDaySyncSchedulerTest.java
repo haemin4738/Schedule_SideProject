@@ -66,7 +66,7 @@ class SpecialDaySyncSchedulerTest {
         Scheduled scheduled = SpecialDaySyncScheduler.class.getMethod("syncCurrentAndNextYear").getAnnotation(Scheduled.class);
         ConditionalOnProperty condition = SpecialDaySyncScheduler.class.getAnnotation(ConditionalOnProperty.class);
 
-        assertThat(scheduled.cron()).isEqualTo("${special-day.sync.cron:0 0 4 * * *}");
+        assertThat(scheduled.cron()).isEqualTo(SpecialDaySyncScheduler.CRON).isEqualTo("${special-day.sync.cron:0 0 4 * * *}");
         assertThat(scheduled.zone()).isEqualTo("Asia/Seoul");
         assertThat(condition.name()).containsExactly("special-day.sync.enabled");
         assertThat(condition.havingValue()).isEqualTo("true");

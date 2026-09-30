@@ -74,4 +74,4 @@ special-day:
     read-timeout: 5s
   sync:
     enabled: true                  # 매일 올해·내년 재동기화(임시공휴일 반영)
-    cron: "0 0 4 * * *"            # Asia/Seoul
+    # cron: 기본값은 SpecialDaySyncScheduler.CRON 한 곳에서 정의(04:00 Asia/Seoul). 바꿀 때만 지정

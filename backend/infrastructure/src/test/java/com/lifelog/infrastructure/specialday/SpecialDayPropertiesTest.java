@@ -14,37 +14,31 @@ class SpecialDayPropertiesTest {
 
     @Test
     void constructor_whenAllNull_appliesDefaults() {
-        SpecialDayProperties props = new SpecialDayProperties(null, null, null, null);
+        SpecialDayProperties props = new SpecialDayProperties(null, null, null);
 
         assertThat(props.serviceKey()).isEmpty();
         assertThat(props.hasServiceKey()).isFalse();
         assertThat(props.baseUrl()).isEqualTo("https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService");
         assertThat(props.http().connectTimeout()).isEqualTo(Duration.ofSeconds(3));
         assertThat(props.http().readTimeout()).isEqualTo(Duration.ofSeconds(5));
-        assertThat(props.sync().enabled()).isTrue();
-        assertThat(props.sync().cron()).isEqualTo("0 0 4 * * *");
     }
 
     @Test
     void constructor_whenBlankValues_appliesDefaultsAndTrimsKey() {
-        SpecialDayProperties props = new SpecialDayProperties("  key+/= ", " ", null,
-                new SpecialDayProperties.Sync(false, " "));
+        SpecialDayProperties props = new SpecialDayProperties("  key+/= ", " ", null);
 
         assertThat(props.serviceKey()).isEqualTo("key+/=");
         assertThat(props.hasServiceKey()).isTrue();
         assertThat(props.baseUrl()).isEqualTo(SpecialDayProperties.DEFAULT_BASE_URL);
-        assertThat(props.sync().enabled()).isFalse();
-        assertThat(props.sync().cron()).isEqualTo(SpecialDayProperties.Sync.DEFAULT_CRON);
     }
 
     @Test
-    void bind_whenYamlStyleProperties_bindsWithUnsetEnvAsEmpty() {
+    void bind_whenYamlStyleProperties_bindsWithUnsetEnvAsEmptyAndIgnoresSyncKeys() {
         Map<String, String> source = Map.of(
                 "special-day.service-key", "",
                 "special-day.base-url", "http://localhost:9999/svc",
                 "special-day.http.read-timeout", "2s",
-                "special-day.sync.enabled", "false",
-                "special-day.sync.cron", "0 30 3 * * *");
+                "special-day.sync.enabled", "false");
 
         SpecialDayProperties props = new Binder(new MapConfigurationPropertySource(source))
                 .bind("special-day", SpecialDayProperties.class).get();
@@ -53,14 +47,20 @@ class SpecialDayPropertiesTest {
         assertThat(props.baseUrl()).isEqualTo("http://localhost:9999/svc");
         assertThat(props.http().connectTimeout()).isEqualTo(Duration.ofSeconds(3));
         assertThat(props.http().readTimeout()).isEqualTo(Duration.ofSeconds(2));
-        assertThat(props.sync().enabled()).isFalse();
-        assertThat(props.sync().cron()).isEqualTo("0 30 3 * * *");
+    }
+
+    @Test
+    void toString_whenKeySet_masksKey() {
+        String text = new SpecialDayProperties("ab+c/d==secret", null, null).toString();
+
+        assertThat(text).contains("serviceKey=***").doesNotContain("ab+c", "secret");
+        assertThat(new SpecialDayProperties(null, null, null).toString()).contains("serviceKey=(unset)");
     }
 
     @Test
     void specialDayClientConfig_whenBuildingBean_createsClientWithoutNetwork() {
         RestClient restClient = new SpecialDayClientConfig()
-                .specialDayRestClient(RestClient.builder(), new SpecialDayProperties(null, null, null, null));
+                .specialDayRestClient(RestClient.builder(), new SpecialDayProperties(null, null, null));
 
         assertThat(restClient).isNotNull();
     }

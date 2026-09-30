@@ -16,9 +16,12 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "special-day.sync.enabled", havingValue = "true", matchIfMissing = true)
 public class SpecialDaySyncScheduler {
 
+    /** cron 기본값(매일 04:00)은 여기 한 곳에서만 정의한다. 필요하면 special-day.sync.cron 으로 덮어쓴다 */
+    static final String CRON = "${special-day.sync.cron:0 0 4 * * *}";
+
     private final SpecialDayService specialDayService;
 
-    @Scheduled(cron = "${special-day.sync.cron:0 0 4 * * *}", zone = "Asia/Seoul")
+    @Scheduled(cron = CRON, zone = "Asia/Seoul")
     public void syncCurrentAndNextYear() {
         if (!specialDayService.isSourceConfigured()) {
             return;
