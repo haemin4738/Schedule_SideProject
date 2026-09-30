@@ -31,8 +31,9 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ApiResponse<Void> logout() {
-        // Phase 2에서 Redis로 refresh 토큰 블랙리스트 처리
+    public ApiResponse<Void> logout(@Valid @RequestBody LogoutRequest request) {
+        // 인증 불필요, 멱등 — 무효/만료/이미 로그아웃된 토큰도 200
+        authService.logout(request);
         return ApiResponse.ok(null);
     }
 }

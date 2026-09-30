@@ -20,7 +20,8 @@ export const signup = (email: string, password: string, name: string) =>
     { email, password, name },
   )
 
-export const logout = () => client.post('/api/v1/auth/logout')
+/** 서버의 refresh 세션을 무효화한다. 인증 불필요, 무효·만료 토큰이어도 200 (멱등) */
+export const logout = (refreshToken: string) => client.post('/api/v1/auth/logout', { refreshToken })
 
 export type SocialProvider = 'kakao' | 'naver' | 'google'
 

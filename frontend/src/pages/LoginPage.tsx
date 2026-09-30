@@ -6,6 +6,7 @@ import {
   getProviderLabel,
   isProviderConfigured,
 } from '@/auth/social'
+import SessionNoticeDialog from '@/components/SessionNoticeDialog'
 import { useAuthStore } from '@/store/authStore'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -37,6 +38,8 @@ export default function LoginPage() {
     formState: { isSubmitting },
   } = useForm<FormValues>()
   const loginStore = useAuthStore((s) => s.login)
+  const sessionNotice = useAuthStore((s) => s.sessionNotice)
+  const clearSessionNotice = useAuthStore((s) => s.clearSessionNotice)
   const navigate = useNavigate()
   const location = useLocation()
   const { socialError, notice } = (location.state as LoginLocationState | null) ?? {}
@@ -84,7 +87,8 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      <div className="w-full max-w-sm rounded-xl bg-white p-8 shadow">
+      {/* 보안 안내 팝업이 떠 있는 동안 배경 로그인 폼은 조작·포커스 불가 */}
+      <div className="w-full max-w-sm rounded-xl bg-white p-8 shadow" inert={sessionNotice ? true : undefined}>
         <h1 className="mb-6 text-2xl font-semibold">로그인</h1>
 
         {info && (
@@ -166,6 +170,8 @@ export default function LoginPage() {
           </Link>
         </p>
       </div>
+
+      {sessionNotice && <SessionNoticeDialog message={sessionNotice} onClose={clearSessionNotice} />}
     </div>
   )
 }

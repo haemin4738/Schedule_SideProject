@@ -27,7 +27,8 @@ server:
 jwt:
   secret: ${JWT_SECRET}
   access-expiration: 900000      # 15분
-  refresh-expiration: 604800000  # 7일
+  refresh-idle-expiration: 1296000000      # 15일 — 마지막 회전 후 미사용 시 만료
+  refresh-absolute-expiration: 2592000000  # 30일 — 최초 로그인 기준 최대 수명(회전해도 연장 안 됨)
 
 springdoc:
   swagger-ui:

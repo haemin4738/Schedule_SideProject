@@ -7,10 +7,17 @@ import lombok.Getter;
 public class BusinessException extends RuntimeException {
 
     private final HttpStatus status;
+    /** 선택. 클라이언트 분기가 필요한 경우에만 지정 */
+    private final ErrorCode code;
 
     public BusinessException(String message, HttpStatus status) {
+        this(message, status, null);
+    }
+
+    public BusinessException(String message, HttpStatus status, ErrorCode code) {
         super(message);
         this.status = status;
+        this.code = code;
     }
 
     public static BusinessException badRequest(String message) {
@@ -31,6 +38,10 @@ public class BusinessException extends RuntimeException {
 
     public static BusinessException unauthorized(String message) {
         return new BusinessException(message, HttpStatus.UNAUTHORIZED);
+    }
+
+    public static BusinessException unauthorized(String message, ErrorCode code) {
+        return new BusinessException(message, HttpStatus.UNAUTHORIZED, code);
     }
 
     public static BusinessException badGateway(String message) {

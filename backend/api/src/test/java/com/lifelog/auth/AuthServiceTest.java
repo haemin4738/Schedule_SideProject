@@ -1,13 +1,13 @@
 package com.lifelog.auth;
 
 import com.lifelog.auth.dto.LoginRequest;
+import com.lifelog.auth.dto.LogoutRequest;
 import com.lifelog.auth.dto.RefreshRequest;
 import com.lifelog.auth.dto.TokenResponse;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.domain.user.User;
 import com.lifelog.domain.user.UserRepository;
 import com.lifelog.domain.user.social.SocialProvider;
-import com.lifelog.security.JwtTokenProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -16,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
@@ -34,13 +35,13 @@ class AuthServiceTest {
     private UserRepository userRepository;
 
     @Mock
-    private JwtTokenProvider tokenProvider;
+    private AuthTokenService tokenService;
 
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Test
     void login_whenPasswordOver72Bytes_throwsUnauthorizedInsteadOfServerError() {
-        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenProvider);
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService);
         User user = User.create("user@test.com", passwordEncoder.encode("correct-password"), "사용자");
         when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
 
@@ -54,7 +55,7 @@ class AuthServiceTest {
     @Test
     void login_whenSocialOnlyUser_throwsSameUnauthorizedWithoutMatching() {
         PasswordEncoder mockEncoder = mock(PasswordEncoder.class);
-        AuthService authService = new AuthService(userRepository, mockEncoder, tokenProvider);
+        AuthService authService = new AuthService(userRepository, mockEncoder, tokenService);
         User socialOnly = User.createSocial("social@test.com", "소셜", SocialProvider.KAKAO);
         when(userRepository.findByEmail("social@test.com")).thenReturn(Optional.of(socialOnly));
 
@@ -64,12 +65,12 @@ class AuthServiceTest {
                 .extracting(e -> ((BusinessException) e).getStatus())
                 .isEqualTo(HttpStatus.UNAUTHORIZED);
         verify(mockEncoder, never()).matches(any(), any());
-        verify(tokenProvider, never()).createAccessToken(any());
+        verify(tokenService, never()).issue(any());
     }
 
     @Test
     void login_whenUnknownEmail_throwsSameUnauthorizedMessage() {
-        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenProvider);
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService);
         when(userRepository.findByEmail("none@test.com")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("none@test.com", "pw")))
@@ -79,12 +80,11 @@ class AuthServiceTest {
 
     @Test
     void login_whenLocalUserWithCorrectPassword_issuesTokens() {
-        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenProvider);
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService);
         User user = User.create("user@test.com", passwordEncoder.encode("correct-password"), "사용자");
         ReflectionTestUtils.setField(user, "id", 1L);
         when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
-        when(tokenProvider.createAccessToken(1L)).thenReturn("access");
-        when(tokenProvider.createRefreshToken(1L)).thenReturn("refresh");
+        when(tokenService.issue(1L)).thenReturn(TokenResponse.of("access", "refresh"));
 
         TokenResponse response = authService.login(new LoginRequest("user@test.com", "correct-password"));
 
@@ -93,11 +93,17 @@ class AuthServiceTest {
     }
 
     @Test
-    void refresh_withValidRefreshToken_issuesNewTokens() {
-        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenProvider);
-        when(tokenProvider.resolveRefreshUserId("valid.refresh.token")).thenReturn(Optional.of(1L));
-        when(tokenProvider.createAccessToken(1L)).thenReturn("new.access.token");
-        when(tokenProvider.createRefreshToken(1L)).thenReturn("new.refresh.token");
+    void login_whenCalled_isNotWrappedInTransaction() throws NoSuchMethodException {
+        // 세션 저장소(Redis) 호출이 포함되므로 DB 트랜잭션을 붙잡지 않는다
+        assertThat(AuthService.class.getMethod("login", LoginRequest.class).isAnnotationPresent(Transactional.class))
+                .isFalse();
+    }
+
+    @Test
+    void refresh_whenCalled_delegatesToTokenService() {
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService);
+        when(tokenService.rotate("valid.refresh.token"))
+                .thenReturn(TokenResponse.of("new.access.token", "new.refresh.token"));
 
         TokenResponse response = authService.refresh(new RefreshRequest("valid.refresh.token"));
 
@@ -107,47 +113,23 @@ class AuthServiceTest {
     }
 
     @Test
-    void refresh_withInvalidToken_throwsUnauthorized() {
-        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenProvider);
-        when(tokenProvider.resolveRefreshUserId("forged.token.value")).thenReturn(Optional.empty());
+    void refresh_whenTokenServiceRejects_propagatesUnauthorized() {
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService);
+        when(tokenService.rotate("forged.token.value"))
+                .thenThrow(BusinessException.unauthorized("유효하지 않은 refresh 토큰입니다."));
 
         assertThatThrownBy(() -> authService.refresh(new RefreshRequest("forged.token.value")))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getStatus())
                 .isEqualTo(HttpStatus.UNAUTHORIZED);
-        verify(tokenProvider, never()).createAccessToken(any());
     }
 
     @Test
-    void refresh_withRealAccessToken_throwsUnauthorized() {
-        // 실제 provider로 access 토큰이 refresh에 쓰일 수 없음을 확인
-        JwtTokenProvider realProvider = realProvider();
-        AuthService authService = new AuthService(userRepository, passwordEncoder, realProvider);
-        String accessToken = realProvider.createAccessToken(1L);
+    void logout_whenCalled_delegatesToTokenService() {
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService);
 
-        assertThatThrownBy(() -> authService.refresh(new RefreshRequest(accessToken)))
-                .isInstanceOf(BusinessException.class)
-                .extracting(e -> ((BusinessException) e).getStatus())
-                .isEqualTo(HttpStatus.UNAUTHORIZED);
-    }
+        authService.logout(new LogoutRequest("refresh.token"));
 
-    @Test
-    void refresh_withRealRefreshToken_issuesTypedTokens() {
-        JwtTokenProvider realProvider = realProvider();
-        AuthService authService = new AuthService(userRepository, passwordEncoder, realProvider);
-
-        TokenResponse response = authService.refresh(new RefreshRequest(realProvider.createRefreshToken(1L)));
-
-        assertThat(realProvider.resolveAccessUserId(response.accessToken())).contains(1L);
-        assertThat(realProvider.resolveRefreshUserId(response.refreshToken())).contains(1L);
-    }
-
-    private JwtTokenProvider realProvider() {
-        JwtTokenProvider realProvider = new JwtTokenProvider();
-        ReflectionTestUtils.setField(realProvider, "secret", "test-secret-key-for-auth-service-refresh-0123456789");
-        ReflectionTestUtils.setField(realProvider, "accessExpiration", 3_600_000L);
-        ReflectionTestUtils.setField(realProvider, "refreshExpiration", 3_600_000L);
-        ReflectionTestUtils.invokeMethod(realProvider, "init");
-        return realProvider;
+        verify(tokenService).revoke("refresh.token");
     }
 }

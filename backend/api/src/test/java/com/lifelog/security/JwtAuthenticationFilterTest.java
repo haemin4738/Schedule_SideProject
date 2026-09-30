@@ -56,7 +56,7 @@ class JwtAuthenticationFilterTest {
     @Test
     void doFilterInternal_withBearerRefreshToken_doesNotAuthenticate() throws Exception {
         MockHttpServletRequest request = request("/api/v1/events");
-        request.addHeader("Authorization", "Bearer " + provider.createRefreshToken(USER_ID));
+        request.addHeader("Authorization", "Bearer " + JwtTokenProviderTest.refreshToken(provider, USER_ID));
 
         MockFilterChain chain = doFilter(request);
 
@@ -101,7 +101,7 @@ class JwtAuthenticationFilterTest {
     @Test
     void doFilterInternal_whenSseQueryRefreshToken_doesNotAuthenticate() throws Exception {
         MockHttpServletRequest request = request(SSE_PATH);
-        request.setParameter("token", provider.createRefreshToken(USER_ID));
+        request.setParameter("token", JwtTokenProviderTest.refreshToken(provider, USER_ID));
 
         MockFilterChain chain = doFilter(request);
 

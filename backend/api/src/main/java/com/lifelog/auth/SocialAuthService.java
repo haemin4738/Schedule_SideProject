@@ -16,7 +16,6 @@ import com.lifelog.domain.user.social.SocialCredential;
 import com.lifelog.domain.user.social.SocialIdentityVerifier;
 import com.lifelog.domain.user.social.SocialProvider;
 import com.lifelog.domain.user.social.SocialUserInfo;
-import com.lifelog.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -51,7 +50,7 @@ public class SocialAuthService {
     private final PendingSocialLinkStore pendingSocialLinkStore;
     private final SocialAccountRegistrar registrar;
     private final PasswordEncoder passwordEncoder;
-    private final JwtTokenProvider tokenProvider;
+    private final AuthTokenService authTokenService;
 
     public SocialLoginResponse login(String providerName, SocialLoginRequest request) {
         SocialProvider provider = parseProvider(providerName);
@@ -179,9 +178,6 @@ public class SocialAuthService {
     }
 
     private TokenResponse issueTokens(Long userId) {
-        return TokenResponse.of(
-                tokenProvider.createAccessToken(userId),
-                tokenProvider.createRefreshToken(userId)
-        );
+        return authTokenService.issue(userId);
     }
 }

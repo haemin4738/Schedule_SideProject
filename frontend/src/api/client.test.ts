@@ -1,6 +1,6 @@
 import axios, { AxiosError, type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import client, { isAuthPath, isTokenExpired } from './client'
+import client, { SESSION_REVOKED_NOTICE, isAuthPath, isTokenExpired } from './client'
 import { useAuthStore } from '@/store/authStore'
 
 const unauthorized = (config: InternalAxiosRequestConfig) =>
@@ -34,6 +34,7 @@ describe('api client 401 처리', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     localStorage.clear()
+    useAuthStore.setState({ sessionNotice: null })
   })
 
   it('401이면 refresh 후 새 토큰으로 원 요청을 재시도하고 두 토큰을 모두 저장한다', async () => {
@@ -54,6 +55,58 @@ describe('api client 401 처리', () => {
     })
     expect(localStorage.getItem('accessToken')).toBe('new-access')
     expect(localStorage.getItem('refreshToken')).toBe('new-refresh')
+  })
+
+  it('refreshSession_logoutWhileRefreshInFlight_doesNotRestoreSession', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockImplementation(async () => {
+      // refresh 응답을 기다리는 동안 사용자가 로그아웃한다
+      useAuthStore.getState().logout()
+      return { data: { data: { accessToken: 'new-access', refreshToken: 'new-refresh' } } }
+    })
+
+    await expect(client.get('/api/v1/events')).rejects.toBeDefined()
+    expect(useAuthStore.getState().accessToken).toBeNull()
+    expect(localStorage.getItem('accessToken')).toBeNull()
+    expect(localStorage.getItem('refreshToken')).toBeNull()
+  })
+
+  it('refreshSession_otherTabRotatedWhileInFlight_usesStoredTokensWithoutLogout', async () => {
+    adapter.mockImplementation(async (config) => {
+      if (config.headers.Authorization === 'Bearer tab1-access') return ok(config, { data: 'events' })
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockImplementation(async () => {
+      // 이 탭의 refresh 응답이 오기 전에 다른 탭이 먼저 갱신해 저장한다
+      localStorage.setItem('accessToken', 'tab1-access')
+      localStorage.setItem('refreshToken', 'tab1-refresh')
+      return { data: { data: { accessToken: 'tab2-access', refreshToken: 'tab2-refresh' } } }
+    })
+
+    const res = await client.get('/api/v1/events')
+
+    expect(res.data).toEqual({ data: 'events' })
+    expect(localStorage.getItem('accessToken')).toBe('tab1-access')
+    expect(localStorage.getItem('refreshToken')).toBe('tab1-refresh')
+    expect(useAuthStore.getState().accessToken).toBe('tab1-access')
+  })
+
+  it('refreshSession_logoutThenReloginWhileInFlight_keepsNewLogin', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockImplementation(async () => {
+      useAuthStore.getState().logout()
+      useAuthStore.getState().login('relogin-access', 'relogin-refresh')
+      return { data: { data: { accessToken: 'stale-access', refreshToken: 'stale-refresh' } } }
+    })
+
+    await client.get('/api/v1/events').catch(() => {})
+
+    expect(localStorage.getItem('refreshToken')).toBe('relogin-refresh')
+    expect(useAuthStore.getState().accessToken).toBe('relogin-access')
   })
 
   it('동시에 여러 요청이 401을 받아도 refresh는 한 번만 호출한다', async () => {
@@ -125,6 +178,62 @@ describe('api client 401 처리', () => {
 
     await expect(client.get('/api/v1/events')).rejects.toMatchObject({ response: { status: 401 } })
     expect(localStorage.getItem('refreshToken')).toBe('valid-refresh')
+    expect(useAuthStore.getState().accessToken).toBe('expired-access')
+  })
+
+  const refreshRejected = (status: number, data: unknown) =>
+    new AxiosError('Refresh failed', 'ERR_BAD_REQUEST', undefined, null, {
+      status,
+      statusText: String(status),
+      data,
+      headers: {},
+      config: {} as InternalAxiosRequestConfig,
+    })
+
+  it('refreshSession_refresh401WithSessionRevokedCode_logsOutWithNotice', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockRejectedValue(
+      refreshRejected(401, { success: false, data: null, error: '보안 안내 문구', code: 'SESSION_REVOKED' }),
+    )
+
+    await expect(client.get('/api/v1/events')).rejects.toMatchObject({ response: { status: 401 } })
+    expect(useAuthStore.getState().accessToken).toBeNull()
+    expect(localStorage.getItem('refreshToken')).toBeNull()
+    expect(useAuthStore.getState().sessionNotice).toBe('보안 안내 문구')
+  })
+
+  it('refreshSession_sessionRevokedWithoutMessage_usesFallbackNotice', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockRejectedValue(refreshRejected(401, { success: false, data: null, code: 'SESSION_REVOKED' }))
+
+    await expect(client.get('/api/v1/events')).rejects.toBeDefined()
+    expect(useAuthStore.getState().sessionNotice).toBe(SESSION_REVOKED_NOTICE)
+  })
+
+  it('refreshSession_refresh401WithInvalidTokenCode_logsOutWithoutNotice', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockRejectedValue(
+      refreshRejected(401, { success: false, data: null, error: '유효하지 않은 refresh 토큰입니다.', code: 'INVALID_REFRESH_TOKEN' }),
+    )
+
+    await expect(client.get('/api/v1/events')).rejects.toBeDefined()
+    expect(useAuthStore.getState().accessToken).toBeNull()
+    expect(useAuthStore.getState().sessionNotice).toBeNull()
+  })
+
+  it('refreshSession_refresh503_doesNotLogout', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockRejectedValue(refreshRejected(503, { success: false, data: null, error: '일시 장애' }))
+
+    await expect(client.get('/api/v1/events')).rejects.toBeDefined()
     expect(useAuthStore.getState().accessToken).toBe('expired-access')
   })
 
