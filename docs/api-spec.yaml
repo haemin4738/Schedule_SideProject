@@ -19,6 +19,8 @@ tags:
     description: 가계부 내역 CRUD / 요약
   - name: job-applications
     description: 구직활동(지원 내역) 관리 — 현재 스펙에는 목록 조회만 기술
+  - name: special-days
+    description: 공휴일·기념일·24절기 (한국천문연구원 특일 정보, 사용자 공용 데이터)
 
 # ------------------------------------------------------------------
 # 보안: 모든 엔드포인트는 기본적으로 BearerAuth 필요
@@ -969,6 +971,60 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse_Error'
 
+  # ================================================================
+  # SPECIAL DAYS
+  # ================================================================
+  /special-days:
+    get:
+      tags: [special-days]
+      summary: 특일(공휴일·기념일·24절기) 조회
+      description: |
+        from~to(양끝 포함, 최대 366일)에 걸친 특일을 날짜 → 종류(HOLIDAY → ANNIVERSARY → SOLAR_TERM) → 이름 순으로 반환한다.
+        **페이지네이션 없음** — 기간이 최대 366일로 제한되고 1년치가 약 130건이라 한 번에 반환한다(캘린더 월/주 화면 오버레이용).
+
+        - 데이터 출처: 한국천문연구원 특일 정보(공공데이터포털). 서버가 연 단위로 받아 DB 에 저장하고,
+          아직 받지 않은 연도(2004 ~ 올해+2)는 첫 조회 때 받는다. 매일 04:00(KST) 올해·내년을 다시 받아
+          임시공휴일 지정 등을 반영한다(최대 1일 지연).
+        - 외부 API 장애·서버 키 미설정 시에도 오류가 아니라 200 으로 이미 저장된 데이터(없으면 빈 배열)를 반환한다.
+        - 같은 날짜·같은 이름의 공휴일이 있으면 기념일 항목은 제외된다. 하루에 여러 건이 있을 수 있다(예: 공휴일 + 절기).
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: 시작일 (yyyy-MM-dd, 포함)
+          schema:
+            type: string
+            format: date
+            example: '2026-09-01'
+        - name: to
+          in: query
+          required: true
+          description: 종료일 (yyyy-MM-dd, 포함). from 부터 최대 366일
+          schema:
+            type: string
+            format: date
+            example: '2026-10-31'
+      responses:
+        '200':
+          description: 특일 목록 (없으면 빈 배열)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_SpecialDayList'
+        '400':
+          description: 파라미터 누락/형식 오류, from > to, 366일 초과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '401':
+          description: 인증 필요 (access 토큰 없음/만료)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+
+
 # ------------------------------------------------------------------
 # COMPONENTS
 # ------------------------------------------------------------------
@@ -1532,3 +1588,31 @@ components:
         status:
           $ref: '#/components/schemas/JobApplicationStatus'
         appliedAt: { type: string, format: date, example: '2026-09-10' }
+
+    ApiResponse_SpecialDayList:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpecialDay'
+        error: { type: string, nullable: true, example: null }
+
+    SpecialDayKind:
+      type: string
+      enum: [HOLIDAY, ANNIVERSARY, SOLAR_TERM]
+      description: |
+        HOLIDAY = 공휴일(쉬는 날, 대체공휴일·선거일 등 포함), ANNIVERSARY = 기념일, SOLAR_TERM = 24절기
+
+    SpecialDay:
+      type: object
+      properties:
+        date: { type: string, format: date, example: '2026-10-03' }
+        name: { type: string, maxLength: 100, example: 개천절 }
+        kind:
+          $ref: '#/components/schemas/SpecialDayKind'
+        holiday:
+          type: boolean
+          description: 쉬는 날 여부 (kind 가 HOLIDAY 일 때만 true)
+          example: true
