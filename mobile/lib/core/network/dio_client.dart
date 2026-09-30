@@ -70,7 +70,7 @@ Dio createDio({
         accessToken = await _refreshing!;
       } on DioException catch (refreshError) {
         // refresh 토큰이 만료/무효일 때만 세션을 만료한다.
-        // 네트워크 오류·5xx 같은 일시 장애나 409(REFRESH_IN_PROGRESS, 동시 갱신)로는 로그아웃하지 않는다
+        // 네트워크 오류·5xx 같은 일시 장애로는 로그아웃하지 않는다
         final status = refreshError.response?.statusCode;
         if (status == 401 && _errorCode(refreshError.response) == _sessionRevokedCode) {
           await _expireSession(storage, SessionEndReason.revokedForSecurity);

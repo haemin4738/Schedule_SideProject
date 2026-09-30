@@ -53,7 +53,7 @@ export const isTokenExpired = (token: string, nowMs: number = Date.now()): boole
 /**
  * access 토큰을 재발급한다. 진행 중인 refresh가 있으면 그 결과를 공유한다.
  * refresh 토큰이 없거나 만료/무효(401/403)면 로그아웃한다. 네트워크 오류·5xx 같은 일시 장애로는 로그아웃하지 않는다.
- * 409(REFRESH_IN_PROGRESS: 다른 탭이 먼저 갱신함)도 일시 실패로 보고 로그아웃하지 않는다 — 다음 요청은 그 탭이 저장한 새 토큰을 쓴다.
+ * 회전 직후 30초 동안은 서버가 직전 토큰으로도 재발급하므로 탭 동시 refresh 는 정상 200 이다.
  * 401 + code SESSION_REVOKED(토큰 재사용 탐지로 모든 기기 로그아웃)면 로그인 화면 팝업 안내와 함께 로그아웃한다.
  */
 export const refreshSession = async (): Promise<string> => {

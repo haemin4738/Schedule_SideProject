@@ -175,19 +175,6 @@ describe('api client 401 처리', () => {
     expect(useAuthStore.getState().sessionNotice).toBeNull()
   })
 
-  it('refreshSession_refresh409RefreshInProgress_doesNotLogout', async () => {
-    adapter.mockImplementation(async (config) => {
-      throw unauthorized(config)
-    })
-    vi.spyOn(axios, 'post').mockRejectedValue(
-      refreshRejected(409, { success: false, data: null, error: '갱신 중', code: 'REFRESH_IN_PROGRESS' }),
-    )
-
-    await expect(client.get('/api/v1/events')).rejects.toMatchObject({ response: { status: 401 } })
-    expect(useAuthStore.getState().accessToken).toBe('expired-access')
-    expect(localStorage.getItem('refreshToken')).toBe('valid-refresh')
-  })
-
   it('refreshSession_refresh503_doesNotLogout', async () => {
     adapter.mockImplementation(async (config) => {
       throw unauthorized(config)

@@ -192,22 +192,6 @@ void main() {
     expect(endReason, SessionEndReason.expired);
   });
 
-  test('refresh가 409 REFRESH_IN_PROGRESS(동시 갱신)면 세션을 유지한다', () async {
-    refreshAdapter = _FakeAdapter((_) => _json(409, {
-          'success': false,
-          'data': null,
-          'error': '다른 요청이 토큰을 갱신 중입니다.',
-          'code': 'REFRESH_IN_PROGRESS',
-        }));
-    refreshDio.httpClientAdapter = refreshAdapter;
-    final api = _FakeAdapter((_) => _unauthorized());
-
-    await expectLater(dioWith(api).get('/api/v1/events'), throwsA(isA<DioException>()));
-    expect(await storage.read(key: 'accessToken'), 'expired-access');
-    expect(await storage.read(key: 'refreshToken'), 'valid-refresh');
-    expect(sessionExpired, isFalse);
-  });
-
   test('refresh가 네트워크 오류로 실패하면 세션을 유지한다', () async {
     refreshAdapter = _FakeAdapter((o) => throw DioException.connectionError(requestOptions: o, reason: 'offline'));
     refreshDio.httpClientAdapter = refreshAdapter;
