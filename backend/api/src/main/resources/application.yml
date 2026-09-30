@@ -64,3 +64,14 @@ oauth:
     allowed-audiences:                      # id_token aud 허용 목록 (웹 + iOS), 빈 값은 무시
       - ${GOOGLE_WEB_CLIENT_ID:}
       - ${GOOGLE_IOS_CLIENT_ID:}
+
+# 특일(공휴일·기념일·24절기) — 한국천문연구원 특일 정보(공공데이터포털 SpcdeInfoService)
+# service-key 가 비어 있으면 기동은 되고 외부 조회만 생략(이미 저장된 데이터 또는 빈 목록 반환)
+special-day:
+  service-key: ${DATA_GO_KR_SERVICE_KEY:}   # 일반 인증키 — Encoding/Decoding 형태 모두 허용
+  http:
+    connect-timeout: 3s
+    read-timeout: 5s
+  sync:
+    enabled: true                  # 매일 올해·내년 재동기화(임시공휴일 반영)
+    cron: "0 0 4 * * *"            # Asia/Seoul
