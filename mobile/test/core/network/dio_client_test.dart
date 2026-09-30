@@ -40,15 +40,25 @@ ResponseBody _refreshed() => _json(200, {
     });
 
 void main() {
+  test('apiBaseUrl은 dart-define이 없으면 에뮬레이터 호스트 주소를 기본값으로 쓴다', () {
+    expect(apiBaseUrl, 'http://10.0.2.2:8080');
+  });
+
+
   const storage = FlutterSecureStorage();
   late Dio refreshDio;
   late _FakeAdapter refreshAdapter;
   var sessionExpired = false;
+  SessionEndReason? endReason;
 
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({'accessToken': 'expired-access', 'refreshToken': 'valid-refresh'});
     sessionExpired = false;
-    onSessionExpired = () => sessionExpired = true;
+    endReason = null;
+    onSessionExpired = (reason) {
+      sessionExpired = true;
+      endReason = reason;
+    };
     refreshAdapter = _FakeAdapter((_) => _refreshed());
     refreshDio = Dio(BaseOptions(baseUrl: 'http://test'))..httpClientAdapter = refreshAdapter;
   });
@@ -105,6 +115,7 @@ void main() {
     await expectLater(dioWith(api).get('/api/v1/events'), throwsA(isA<DioException>()));
     expect(refreshAdapter.requests, isEmpty);
     expect(sessionExpired, isTrue);
+    expect(endReason, SessionEndReason.expired);
   });
 
   test('재시도한 요청이 다시 401이면 refresh를 반복하지 않는다', () async {
@@ -138,6 +149,73 @@ void main() {
     expect(await storage.read(key: 'accessToken'), isNull);
     expect(await storage.read(key: 'refreshToken'), isNull);
     expect(sessionExpired, isTrue);
+    expect(endReason, SessionEndReason.expired);
+  });
+
+  test('refresh가 401 SESSION_REVOKED면 토큰을 삭제하고 보안 폐기 사유로 세션을 만료한다', () async {
+    refreshAdapter = _FakeAdapter((_) => _json(401, {
+          'success': false,
+          'data': null,
+          'error': '보안을 위해 모든 기기에서 로그아웃되었습니다. 다시 로그인해 주세요.',
+          'code': 'SESSION_REVOKED',
+        }));
+    refreshDio.httpClientAdapter = refreshAdapter;
+    final api = _FakeAdapter((_) => _unauthorized());
+
+    await expectLater(dioWith(api).get('/api/v1/events'), throwsA(isA<DioException>()));
+    expect(await storage.read(key: 'accessToken'), isNull);
+    expect(await storage.read(key: 'refreshToken'), isNull);
+    expect(endReason, SessionEndReason.revokedForSecurity);
+  });
+
+  test('refresh가 401 INVALID_REFRESH_TOKEN이면 일반 만료 사유로 세션을 만료한다', () async {
+    refreshAdapter = _FakeAdapter((_) => _json(401, {
+          'success': false,
+          'data': null,
+          'error': '유효하지 않은 refresh 토큰입니다.',
+          'code': 'INVALID_REFRESH_TOKEN',
+        }));
+    refreshDio.httpClientAdapter = refreshAdapter;
+    final api = _FakeAdapter((_) => _unauthorized());
+
+    await expectLater(dioWith(api).get('/api/v1/events'), throwsA(isA<DioException>()));
+    expect(await storage.read(key: 'refreshToken'), isNull);
+    expect(endReason, SessionEndReason.expired);
+  });
+
+  test('refresh가 403이면 일반 만료 사유로 세션을 만료한다', () async {
+    refreshAdapter = _FakeAdapter((_) => _json(403, {'success': false, 'data': null, 'error': '접근 권한이 없습니다.'}));
+    refreshDio.httpClientAdapter = refreshAdapter;
+    final api = _FakeAdapter((_) => _unauthorized());
+
+    await expectLater(dioWith(api).get('/api/v1/events'), throwsA(isA<DioException>()));
+    expect(endReason, SessionEndReason.expired);
+  });
+
+  test('refresh가 409 REFRESH_IN_PROGRESS(동시 갱신)면 세션을 유지한다', () async {
+    refreshAdapter = _FakeAdapter((_) => _json(409, {
+          'success': false,
+          'data': null,
+          'error': '다른 요청이 토큰을 갱신 중입니다.',
+          'code': 'REFRESH_IN_PROGRESS',
+        }));
+    refreshDio.httpClientAdapter = refreshAdapter;
+    final api = _FakeAdapter((_) => _unauthorized());
+
+    await expectLater(dioWith(api).get('/api/v1/events'), throwsA(isA<DioException>()));
+    expect(await storage.read(key: 'accessToken'), 'expired-access');
+    expect(await storage.read(key: 'refreshToken'), 'valid-refresh');
+    expect(sessionExpired, isFalse);
+  });
+
+  test('refresh가 네트워크 오류로 실패하면 세션을 유지한다', () async {
+    refreshAdapter = _FakeAdapter((o) => throw DioException.connectionError(requestOptions: o, reason: 'offline'));
+    refreshDio.httpClientAdapter = refreshAdapter;
+    final api = _FakeAdapter((_) => _unauthorized());
+
+    await expectLater(dioWith(api).get('/api/v1/events'), throwsA(isA<DioException>()));
+    expect(await storage.read(key: 'refreshToken'), 'valid-refresh');
+    expect(sessionExpired, isFalse);
   });
 
   test('refresh가 서버 오류(5xx)로 실패하면 세션을 만료하지 않는다', () async {
