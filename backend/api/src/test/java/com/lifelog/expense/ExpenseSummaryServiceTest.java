@@ -2,11 +2,14 @@ package com.lifelog.expense;
 
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.domain.expense.ExpenseCategoryTotal;
+import com.lifelog.domain.expense.ExpenseDailyTotal;
 import com.lifelog.domain.expense.ExpenseMonthlyTotal;
 import com.lifelog.domain.expense.ExpenseRepository;
 import com.lifelog.domain.expense.ExpenseType;
 import com.lifelog.expense.dto.CategorySummaryResponse;
 import com.lifelog.expense.dto.CategorySummaryResponse.CategoryItem;
+import com.lifelog.expense.dto.DailySummaryResponse;
+import com.lifelog.expense.dto.DailySummaryResponse.DailyItem;
 import com.lifelog.expense.dto.MonthlySummaryResponse;
 import com.lifelog.expense.dto.MonthlySummaryResponse.MonthlyItem;
 import org.junit.jupiter.api.Test;
@@ -172,6 +175,89 @@ class ExpenseSummaryServiceTest {
                 LocalDate.of(2026, 9, 2), LocalDate.of(2026, 9, 1)))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ExpenseSummaryServiceTest::statusOf).isEqualTo(HttpStatus.BAD_REQUEST);
+        verifyNoInteractions(expenseRepository);
+    }
+
+    // ---- daily ----
+
+    @Test
+    void daily_whenDataSparse_returnsOnlyDaysWithDataSortedAndComputesNet() {
+        LocalDate from = LocalDate.of(2026, 9, 1);
+        LocalDate to = LocalDate.of(2026, 9, 30);
+        // 리포지토리 반환 순서가 섞여 있어도 날짜 오름차순으로 정렬되어야 한다
+        when(expenseRepository.sumDailyByUserId(1L, from, to)).thenReturn(List.of(
+                new ExpenseDailyTotal(LocalDate.of(2026, 9, 20), ExpenseType.EXPENSE, 12_000L),
+                new ExpenseDailyTotal(LocalDate.of(2026, 9, 3), ExpenseType.INCOME, 3_000_000L),
+                new ExpenseDailyTotal(LocalDate.of(2026, 9, 3), ExpenseType.EXPENSE, 45_000L),
+                new ExpenseDailyTotal(LocalDate.of(2026, 9, 25), ExpenseType.INCOME, 10_000L)));
+
+        DailySummaryResponse result = service.daily(1L, from, to);
+
+        assertThat(result.from()).isEqualTo(from);
+        assertThat(result.to()).isEqualTo(to);
+        assertThat(result.days())
+                .extracting(DailyItem::date, DailyItem::income, DailyItem::expense, DailyItem::net)
+                .containsExactly(
+                        tuple(LocalDate.of(2026, 9, 3), 3_000_000L, 45_000L, 2_955_000L),
+                        tuple(LocalDate.of(2026, 9, 20), 0L, 12_000L, -12_000L),
+                        tuple(LocalDate.of(2026, 9, 25), 10_000L, 0L, 10_000L));
+        assertThat(result.totalIncome()).isEqualTo(3_010_000L);
+        assertThat(result.totalExpense()).isEqualTo(57_000L);
+        assertThat(result.net()).isEqualTo(2_953_000L);
+    }
+
+    @Test
+    void daily_whenNoData_returnsEmptyDaysAndZeroTotals() {
+        LocalDate day = LocalDate.of(2026, 9, 10);
+        when(expenseRepository.sumDailyByUserId(1L, day, day)).thenReturn(List.of());
+
+        DailySummaryResponse result = service.daily(1L, day, day);
+
+        assertThat(result.days()).isEmpty();
+        assertThat(result.totalIncome()).isZero();
+        assertThat(result.totalExpense()).isZero();
+        assertThat(result.net()).isZero();
+    }
+
+    @Test
+    void daily_whenTotalNull_treatsAsZero() {
+        LocalDate day = LocalDate.of(2026, 9, 10);
+        when(expenseRepository.sumDailyByUserId(1L, day, day))
+                .thenReturn(List.of(new ExpenseDailyTotal(day, ExpenseType.EXPENSE, null)));
+
+        DailySummaryResponse result = service.daily(1L, day, day);
+
+        assertThat(result.days()).extracting(DailyItem::expense).containsExactly(0L);
+        assertThat(result.net()).isZero();
+    }
+
+    @Test
+    void daily_whenExactly366Days_isAllowed() {
+        LocalDate from = LocalDate.of(2025, 10, 1);
+        LocalDate to = from.plusDays(365);
+        when(expenseRepository.sumDailyByUserId(1L, from, to)).thenReturn(List.of());
+
+        assertThat(service.daily(1L, from, to).days()).isEmpty();
+    }
+
+    @Test
+    void daily_whenMoreThan366Days_throwsBadRequest() {
+        LocalDate from = LocalDate.of(2025, 10, 1);
+        LocalDate to = from.plusDays(366);
+
+        assertThatThrownBy(() -> service.daily(1L, from, to))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ExpenseSummaryServiceTest::statusOf)
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        verifyNoInteractions(expenseRepository);
+    }
+
+    @Test
+    void daily_whenFromAfterTo_throwsBadRequest() {
+        assertThatThrownBy(() -> service.daily(1L, LocalDate.of(2026, 9, 2), LocalDate.of(2026, 9, 1)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ExpenseSummaryServiceTest::statusOf)
+                .isEqualTo(HttpStatus.BAD_REQUEST);
         verifyNoInteractions(expenseRepository);
     }
 }

@@ -4,6 +4,7 @@ import tools.jackson.databind.ObjectMapper;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.domain.expense.ExpenseType;
 import com.lifelog.expense.dto.CategorySummaryResponse;
+import com.lifelog.expense.dto.DailySummaryResponse;
 import com.lifelog.expense.dto.ExpenseRequest;
 import com.lifelog.expense.dto.ExpenseResponse;
 import com.lifelog.expense.dto.ExpenseSummary;
@@ -439,5 +440,73 @@ class ExpenseControllerTest {
         mockMvc.perform(get(BASE + "/summary/by-category").with(asUser())
                         .param("type", "NOPE").param("from", "2026-09-01").param("to", "2026-09-30"))
                 .andExpect(status().isBadRequest());
+    }
+
+    // ---- summary/daily ----
+
+    @Test
+    void dailySummary_whenValid_returnsSparseDays() throws Exception {
+        LocalDate from = LocalDate.of(2026, 9, 1);
+        LocalDate to = LocalDate.of(2026, 9, 30);
+        DailySummaryResponse response = new DailySummaryResponse(from, to, 3_000_000L, 57_000L, 2_943_000L,
+                List.of(new DailySummaryResponse.DailyItem(LocalDate.of(2026, 9, 3), 3_000_000L, 45_000L, 2_955_000L),
+                        new DailySummaryResponse.DailyItem(LocalDate.of(2026, 9, 20), 0L, 12_000L, -12_000L)));
+        when(expenseSummaryService.daily(USER_ID, from, to)).thenReturn(response);
+
+        mockMvc.perform(get(BASE + "/summary/daily").with(asUser())
+                        .param("from", "2026-09-01").param("to", "2026-09-30"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.from").value("2026-09-01"))
+                .andExpect(jsonPath("$.data.to").value("2026-09-30"))
+                .andExpect(jsonPath("$.data.totalIncome").value(3_000_000))
+                .andExpect(jsonPath("$.data.totalExpense").value(57_000))
+                .andExpect(jsonPath("$.data.net").value(2_943_000))
+                .andExpect(jsonPath("$.data.days.length()").value(2))
+                .andExpect(jsonPath("$.data.days[0].date").value("2026-09-03"))
+                .andExpect(jsonPath("$.data.days[1].expense").value(12_000))
+                .andExpect(jsonPath("$.data.days[1].net").value(-12_000));
+    }
+
+    @Test
+    void dailySummary_withoutAuthentication_returnsUnauthorized() throws Exception {
+        mockMvc.perform(get(BASE + "/summary/daily").param("from", "2026-09-01").param("to", "2026-09-30"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(expenseSummaryService);
+    }
+
+    @Test
+    void dailySummary_whenFromMissing_returns400() throws Exception {
+        mockMvc.perform(get(BASE + "/summary/daily").param("to", "2026-09-30").with(asUser()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("필수 요청 파라미터가 누락되었습니다: from"));
+        verifyNoInteractions(expenseSummaryService);
+    }
+
+    @Test
+    void dailySummary_whenDateFormatInvalid_returns400() throws Exception {
+        mockMvc.perform(get(BASE + "/summary/daily").param("from", "2026-09").param("to", "2026-09-30").with(asUser()))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(expenseSummaryService);
+    }
+
+    @Test
+    void dailySummary_whenFromAfterTo_returns400FromService() throws Exception {
+        when(expenseSummaryService.daily(any(), any(), any()))
+                .thenThrow(BusinessException.badRequest("조회 시작일은 종료일보다 늦을 수 없습니다."));
+
+        mockMvc.perform(get(BASE + "/summary/daily").param("from", "2026-09-30").param("to", "2026-09-01").with(asUser()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("조회 시작일은 종료일보다 늦을 수 없습니다."));
+    }
+
+    @Test
+    void dailySummary_whenRangeTooLong_returns400FromService() throws Exception {
+        when(expenseSummaryService.daily(any(), any(), any()))
+                .thenThrow(BusinessException.badRequest("일별 요약은 최대 366일까지 조회할 수 있습니다."));
+
+        mockMvc.perform(get(BASE + "/summary/daily").param("from", "2025-01-01").param("to", "2026-09-30").with(asUser()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("일별 요약은 최대 366일까지 조회할 수 있습니다."));
     }
 }

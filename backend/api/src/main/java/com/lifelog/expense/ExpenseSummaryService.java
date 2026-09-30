@@ -2,11 +2,14 @@ package com.lifelog.expense;
 
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.domain.expense.ExpenseCategoryTotal;
+import com.lifelog.domain.expense.ExpenseDailyTotal;
 import com.lifelog.domain.expense.ExpenseMonthlyTotal;
 import com.lifelog.domain.expense.ExpenseRepository;
 import com.lifelog.domain.expense.ExpenseType;
 import com.lifelog.expense.dto.CategorySummaryResponse;
 import com.lifelog.expense.dto.CategorySummaryResponse.CategoryItem;
+import com.lifelog.expense.dto.DailySummaryResponse;
+import com.lifelog.expense.dto.DailySummaryResponse.DailyItem;
 import com.lifelog.expense.dto.MonthlySummaryResponse;
 import com.lifelog.expense.dto.MonthlySummaryResponse.MonthlyItem;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +23,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 @Service
 @RequiredArgsConstructor
@@ -61,6 +65,40 @@ public class ExpenseSummaryService {
         }
         return new MonthlySummaryResponse(from, to, totalIncome, totalExpense,
                 totalIncome - totalExpense, months);
+    }
+
+    /** 내역이 있는 날짜만 포함(sparse), 날짜 오름차순. 월별 요약(dense)과 달리 빈 날짜를 0으로 채우지 않는다. */
+    @Transactional(readOnly = true)
+    public DailySummaryResponse daily(Long userId, LocalDate from, LocalDate to) {
+        if (from.isAfter(to)) {
+            throw BusinessException.badRequest("조회 시작일은 종료일보다 늦을 수 없습니다.");
+        }
+        if (ChronoUnit.DAYS.between(from, to) + 1 > MAX_DAYS) {
+            throw BusinessException.badRequest("일별 요약은 최대 " + MAX_DAYS + "일까지 조회할 수 있습니다.");
+        }
+
+        Map<LocalDate, long[]> totals = new TreeMap<>();  // [income, expense], 날짜 오름차순
+        for (ExpenseDailyTotal row : expenseRepository.sumDailyByUserId(userId, from, to)) {
+            long[] bucket = totals.computeIfAbsent(row.date(), k -> new long[2]);
+            long amount = row.total() == null ? 0L : row.total();
+            if (row.type() == ExpenseType.INCOME) {
+                bucket[0] += amount;
+            } else {
+                bucket[1] += amount;
+            }
+        }
+
+        List<DailyItem> days = new ArrayList<>(totals.size());
+        long totalIncome = 0L;
+        long totalExpense = 0L;
+        for (Map.Entry<LocalDate, long[]> entry : totals.entrySet()) {
+            long[] bucket = entry.getValue();
+            days.add(new DailyItem(entry.getKey(), bucket[0], bucket[1], bucket[0] - bucket[1]));
+            totalIncome += bucket[0];
+            totalExpense += bucket[1];
+        }
+        return new DailySummaryResponse(from, to, totalIncome, totalExpense,
+                totalIncome - totalExpense, days);
     }
 
     @Transactional(readOnly = true)
