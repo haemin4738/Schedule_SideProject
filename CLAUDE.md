@@ -16,7 +16,7 @@
 - **프레임워크**: Spring Boot 3.3.5
 - **빌드 도구**: Gradle (멀티모듈 — api / domain / infrastructure)
 - **DB**: MySQL 8, Redis 7
-- **인증**: JWT (access 15분 / refresh 7일) + OAuth2
+- **인증**: JWT (access 15분 / refresh 비활성 15일·최대 30일, 회전) + OAuth2
 - **실시간**: SSE
 - **프론트**: React (Vite), Flutter (iOS)
 - **컨테이너**: Docker / Docker Compose
@@ -86,7 +86,10 @@ cp .env.example .env
 ```json
 { "success": true, "data": {}, "error": null }
 { "success": true, "data": [], "error": null, "meta": { "page": 0, "size": 20, "total": 100, "totalPages": 5 } }
+{ "success": false, "data": null, "error": "…", "code": "SESSION_REVOKED" }
 ```
+
+`code` 는 선택 필드(분기가 필요한 오류에만 포함, 없으면 생략) — 클라이언트 분기는 `error` 문구가 아니라 `code` 로만 한다.
 
 ## Git 브랜치 전략
 
