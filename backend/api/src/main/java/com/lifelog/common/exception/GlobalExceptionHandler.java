@@ -1,6 +1,7 @@
 package com.lifelog.common.exception;
 
 import com.lifelog.common.dto.ApiResponse;
+import com.lifelog.domain.user.session.AuthSessionUnavailableException;
 import com.lifelog.domain.user.social.SocialAuthException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +26,16 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException e) {
-        return ResponseEntity.status(e.getStatus()).body(ApiResponse.error(e.getMessage()));
+        return ResponseEntity.status(e.getStatus()).body(ApiResponse.error(e.getMessage(), e.getCode()));
+    }
+
+    @ExceptionHandler(AuthSessionUnavailableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAuthSessionUnavailable(AuthSessionUnavailableException e) {
+        // 저장소 예외 메시지에 세션 키가 담길 수 있으므로 예외 타입만 기록하고, 응답은 고정 문구로 한다
+        String causeType = e.getCause() != null ? e.getCause().getClass().getSimpleName() : "none";
+        log.error("Auth session store unavailable: cause={}", causeType);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiResponse.error("인증 서비스를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요."));
     }
 
     @ExceptionHandler(SocialAuthException.class)

@@ -4,7 +4,6 @@ import com.lifelog.auth.dto.*;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.domain.user.User;
 import com.lifelog.domain.user.UserRepository;
-import com.lifelog.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -18,7 +17,7 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtTokenProvider tokenProvider;
+    private final AuthTokenService authTokenService;
 
     @Transactional
     public UserResponse signup(SignupRequest request) {
@@ -29,7 +28,7 @@ public class AuthService {
         return UserResponse.from(userRepository.save(user));
     }
 
-    @Transactional(readOnly = true)
+    // Redis(세션 저장소) 호출이 포함되므로 DB 트랜잭션을 걸지 않는다 — 조회는 리포지토리 기본 트랜잭션으로 충분
     public TokenResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow(() -> BusinessException.unauthorized("이메일 또는 비밀번호가 올바르지 않습니다."));
@@ -39,21 +38,16 @@ public class AuthService {
             throw BusinessException.unauthorized("이메일 또는 비밀번호가 올바르지 않습니다.");
         }
 
-        return TokenResponse.of(
-                tokenProvider.createAccessToken(user.getId()),
-                tokenProvider.createRefreshToken(user.getId())
-        );
+        TokenResponse tokens = authTokenService.issue(user.getId());
+        log.info("로그인 성공: userId={}", user.getId());
+        return tokens;
     }
 
     public TokenResponse refresh(RefreshRequest request) {
-        Long userId = tokenProvider.resolveRefreshUserId(request.refreshToken())
-                .orElseThrow(() -> {
-                    log.warn("refresh 토큰 재발급 거부: 유효하지 않거나 refresh 타입이 아닌 토큰");
-                    return BusinessException.unauthorized("유효하지 않은 refresh 토큰입니다.");
-                });
-        return TokenResponse.of(
-                tokenProvider.createAccessToken(userId),
-                tokenProvider.createRefreshToken(userId)
-        );
+        return authTokenService.rotate(request.refreshToken());
+    }
+
+    public void logout(LogoutRequest request) {
+        authTokenService.revoke(request.refreshToken());
     }
 }

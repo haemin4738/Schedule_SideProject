@@ -5,13 +5,16 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JwtTokenProviderTest {
 
@@ -28,12 +31,17 @@ class JwtTokenProviderTest {
     }
 
     static JwtTokenProvider create(String secret, long accessExpiration, long refreshExpiration) {
-        JwtTokenProvider provider = new JwtTokenProvider();
-        ReflectionTestUtils.setField(provider, "secret", secret);
-        ReflectionTestUtils.setField(provider, "accessExpiration", accessExpiration);
-        ReflectionTestUtils.setField(provider, "refreshExpiration", refreshExpiration);
-        ReflectionTestUtils.invokeMethod(provider, "init");
-        return provider;
+        return create(secret, accessExpiration, refreshExpiration, Clock.systemUTC());
+    }
+
+    static JwtTokenProvider create(String secret, long accessExpiration, long refreshExpiration, Clock clock) {
+        return new JwtTokenProvider(secret, accessExpiration, refreshExpiration, refreshExpiration, clock);
+    }
+
+    /** 테스트용 refresh 토큰 — 현재 시각 기준 수명 내에서 발급 */
+    static String refreshToken(JwtTokenProvider provider, Long userId) {
+        Instant now = Instant.now();
+        return provider.createRefreshToken(userId, "sid-1", "jti-1", now, provider.refreshExpiresAt(now, now));
     }
 
     private static SecretKey key(String secret) {
@@ -52,22 +60,25 @@ class JwtTokenProviderTest {
     }
 
     @Test
-    void resolveRefreshUserId_withAccessToken_returnsEmpty() {
+    void parseRefreshToken_withAccessToken_returnsEmpty() {
         String token = provider.createAccessToken(USER_ID);
 
-        assertThat(provider.resolveRefreshUserId(token)).isEmpty();
+        assertThat(provider.parseRefreshToken(token)).isEmpty();
     }
 
     @Test
-    void resolveRefreshUserId_withRefreshToken_returnsUserId() {
-        String token = provider.createRefreshToken(USER_ID);
+    void parseRefreshToken_withRefreshToken_returnsClaims() {
+        Instant authTime = Instant.now().minusSeconds(60).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        Instant expiresAt = Instant.now().plusSeconds(600).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        String token = provider.createRefreshToken(USER_ID, "sid-1", "jti-1", authTime, expiresAt);
 
-        assertThat(provider.resolveRefreshUserId(token)).contains(USER_ID);
+        assertThat(provider.parseRefreshToken(token)).contains(
+                new RefreshTokenClaims(USER_ID, "sid-1", "jti-1", authTime, expiresAt));
     }
 
     @Test
     void resolveAccessUserId_withRefreshToken_returnsEmpty() {
-        String token = provider.createRefreshToken(USER_ID);
+        String token = refreshToken(provider, USER_ID);
 
         assertThat(provider.resolveAccessUserId(token)).isEmpty();
     }
@@ -82,10 +93,13 @@ class JwtTokenProviderTest {
 
     @Test
     void createRefreshToken_whenIssued_hasRefreshTypeClaim() {
-        Claims claims = parse(provider.createRefreshToken(USER_ID));
+        Claims claims = parse(refreshToken(provider, USER_ID));
 
         assertThat(claims.get("type", String.class)).isEqualTo("refresh");
         assertThat(claims.getSubject()).isEqualTo("42");
+        assertThat(claims.getId()).isEqualTo("jti-1");
+        assertThat(claims.get("sid", String.class)).isEqualTo("sid-1");
+        assertThat(claims.get("auth_time")).isInstanceOf(Number.class);
     }
 
     @Test
@@ -99,7 +113,7 @@ class JwtTokenProviderTest {
                 .compact();
 
         assertThat(provider.resolveAccessUserId(legacy)).isEmpty();
-        assertThat(provider.resolveRefreshUserId(legacy)).isEmpty();
+        assertThat(provider.parseRefreshToken(legacy)).isEmpty();
     }
 
     @Test
@@ -112,7 +126,7 @@ class JwtTokenProviderTest {
                 .compact();
 
         assertThat(provider.resolveAccessUserId(token)).isEmpty();
-        assertThat(provider.resolveRefreshUserId(token)).isEmpty();
+        assertThat(provider.parseRefreshToken(token)).isEmpty();
     }
 
     @Test
@@ -120,27 +134,31 @@ class JwtTokenProviderTest {
         JwtTokenProvider otherProvider = create(OTHER_SECRET, ONE_HOUR, ONE_HOUR);
 
         assertThat(provider.resolveAccessUserId(otherProvider.createAccessToken(USER_ID))).isEmpty();
-        assertThat(provider.resolveRefreshUserId(otherProvider.createRefreshToken(USER_ID))).isEmpty();
+        assertThat(provider.parseRefreshToken(refreshToken(otherProvider, USER_ID))).isEmpty();
     }
 
     @Test
     void resolveAccessUserId_whenTokenExpired_returnsEmpty() {
-        JwtTokenProvider expiredProvider = create(SECRET, -60_000L, -60_000L);
+        // 2시간 전 시각으로 발급한 1시간짜리 토큰은 현재 시각 기준 만료
+        Instant past = Instant.now().minusSeconds(7_200);
+        JwtTokenProvider pastProvider = create(SECRET, ONE_HOUR, ONE_HOUR, Clock.fixed(past, ZoneOffset.UTC));
+        String expiredRefresh = pastProvider.createRefreshToken(
+                USER_ID, "sid-1", "jti-1", past, pastProvider.refreshExpiresAt(past, past));
 
-        assertThat(provider.resolveAccessUserId(expiredProvider.createAccessToken(USER_ID))).isEmpty();
-        assertThat(provider.resolveRefreshUserId(expiredProvider.createRefreshToken(USER_ID))).isEmpty();
+        assertThat(provider.resolveAccessUserId(pastProvider.createAccessToken(USER_ID))).isEmpty();
+        assertThat(provider.parseRefreshToken(expiredRefresh)).isEmpty();
     }
 
     @Test
     void resolveAccessUserId_whenTokenMalformed_returnsEmpty() {
         assertThat(provider.resolveAccessUserId("not.a.jwt")).isEmpty();
-        assertThat(provider.resolveRefreshUserId("garbage")).isEmpty();
+        assertThat(provider.parseRefreshToken("garbage")).isEmpty();
     }
 
     @Test
     void resolveAccessUserId_whenTokenEmptyOrNull_returnsEmpty() {
         assertThat(provider.resolveAccessUserId("")).isEmpty();
-        assertThat(provider.resolveRefreshUserId("")).isEmpty();
+        assertThat(provider.parseRefreshToken("")).isEmpty();
         assertThat(provider.resolveAccessUserId(null)).isEmpty();
     }
 
@@ -165,5 +183,37 @@ class JwtTokenProviderTest {
                 .compact();
 
         assertThat(provider.resolveAccessUserId(token)).isEmpty();
+    }
+
+    @Test
+    void parseRefreshToken_whenLegacyRefreshWithoutSessionClaims_returnsEmpty() {
+        // jti/sid/auth_time 이 없는 기존 refresh 토큰은 거부
+        String legacy = Jwts.builder()
+                .subject("42")
+                .claim("type", "refresh")
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + ONE_HOUR))
+                .signWith(key(SECRET))
+                .compact();
+
+        assertThat(provider.parseRefreshToken(legacy)).isEmpty();
+    }
+
+    @Test
+    void refreshExpiresAt_whenAbsoluteLimitEarlier_returnsAbsoluteLimit() {
+        JwtTokenProvider p = new JwtTokenProvider(SECRET, ONE_HOUR, 10 * ONE_HOUR, 30 * ONE_HOUR, Clock.systemUTC());
+        Instant authTime = Instant.parse("2026-09-01T00:00:00Z");
+
+        assertThat(p.refreshExpiresAt(authTime, authTime)).isEqualTo(authTime.plusMillis(10 * ONE_HOUR));
+        Instant late = authTime.plusMillis(25 * ONE_HOUR);
+        assertThat(p.refreshExpiresAt(authTime, late)).isEqualTo(authTime.plusMillis(30 * ONE_HOUR));
+    }
+
+    @Test
+    void constructor_whenIdleExceedsAbsolute_throwsException() {
+        assertThatThrownBy(() -> new JwtTokenProvider(SECRET, ONE_HOUR, 2 * ONE_HOUR, ONE_HOUR, Clock.systemUTC()))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> new JwtTokenProvider(SECRET, ONE_HOUR, 0, ONE_HOUR, Clock.systemUTC()))
+                .isInstanceOf(IllegalStateException.class);
     }
 }

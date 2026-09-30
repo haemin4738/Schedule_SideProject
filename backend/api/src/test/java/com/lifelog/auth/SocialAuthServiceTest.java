@@ -17,7 +17,6 @@ import com.lifelog.domain.user.social.SocialCredential;
 import com.lifelog.domain.user.social.SocialIdentityVerifier;
 import com.lifelog.domain.user.social.SocialProvider;
 import com.lifelog.domain.user.social.SocialUserInfo;
-import com.lifelog.security.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -60,14 +59,14 @@ class SocialAuthServiceTest {
     @Mock private PendingSocialLinkStore pendingSocialLinkStore;
     @Mock private SocialAccountRegistrar registrar;
     @Mock private PasswordEncoder passwordEncoder;
-    @Mock private JwtTokenProvider tokenProvider;
+    @Mock private AuthTokenService tokenService;
 
     private SocialAuthService service;
 
     @BeforeEach
     void setUp() {
         service = new SocialAuthService(verifier, socialAccountRepository, userRepository,
-                pendingSocialLinkStore, registrar, passwordEncoder, tokenProvider);
+                pendingSocialLinkStore, registrar, passwordEncoder, tokenService);
     }
 
     // ---------- fixtures ----------
@@ -91,8 +90,7 @@ class SocialAuthServiceTest {
     }
 
     private void givenTokens(long userId) {
-        when(tokenProvider.createAccessToken(userId)).thenReturn("access-" + userId);
-        when(tokenProvider.createRefreshToken(userId)).thenReturn("refresh-" + userId);
+        when(tokenService.issue(userId)).thenReturn(TokenResponse.of("access-" + userId, "refresh-" + userId));
     }
 
     private static HttpStatus statusOf(Throwable e) {
@@ -145,7 +143,7 @@ class SocialAuthServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessage(SocialAuthService.EMAIL_REQUIRED_MESSAGE)
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.BAD_REQUEST);
-        verifyNoInteractions(userRepository, registrar, pendingSocialLinkStore, tokenProvider);
+        verifyNoInteractions(userRepository, registrar, pendingSocialLinkStore, tokenService);
     }
 
     @Test
@@ -179,7 +177,7 @@ class SocialAuthServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessage(SocialAuthService.PROVIDER_ALREADY_LINKED_MESSAGE)
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.CONFLICT);
-        verifyNoInteractions(pendingSocialLinkStore, registrar, tokenProvider);
+        verifyNoInteractions(pendingSocialLinkStore, registrar, tokenService);
     }
 
     @Test
@@ -204,7 +202,7 @@ class SocialAuthServiceTest {
         ArgumentCaptor<PendingSocialLink> captor = ArgumentCaptor.forClass(PendingSocialLink.class);
         verify(pendingSocialLinkStore).issue(captor.capture(), org.mockito.ArgumentMatchers.eq(Duration.ofMinutes(10)));
         assertThat(captor.getValue()).isEqualTo(new PendingSocialLink(5L, SocialProvider.KAKAO, "kakao-1"));
-        verifyNoInteractions(registrar, tokenProvider);
+        verifyNoInteractions(registrar, tokenService);
     }
 
     @Test
@@ -218,7 +216,7 @@ class SocialAuthServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("이미 네이버 로그인으로 가입된 이메일입니다.")
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.CONFLICT);
-        verifyNoInteractions(pendingSocialLinkStore, registrar, tokenProvider);
+        verifyNoInteractions(pendingSocialLinkStore, registrar, tokenService);
         verify(socialAccountRepository, never()).existsByUserIdAndProvider(any(), any());
     }
 
@@ -368,7 +366,7 @@ class SocialAuthServiceTest {
                 .hasMessage(SocialAuthService.LINK_WRONG_PASSWORD_MESSAGE)
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.UNAUTHORIZED);
         verify(pendingSocialLinkStore, never()).consume(any());
-        verifyNoInteractions(registrar, tokenProvider);
+        verifyNoInteractions(registrar, tokenService);
     }
 
     @Test
@@ -394,7 +392,7 @@ class SocialAuthServiceTest {
                 .hasMessage(SocialAuthService.LINK_TOO_MANY_ATTEMPTS_MESSAGE)
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.UNAUTHORIZED);
         verify(pendingSocialLinkStore).consume(LINK_TOKEN);
-        verifyNoInteractions(registrar, tokenProvider);
+        verifyNoInteractions(registrar, tokenService);
     }
 
     @Test
@@ -405,7 +403,7 @@ class SocialAuthServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessage(SocialAuthService.LINK_EXPIRED_MESSAGE)
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.UNAUTHORIZED);
-        verifyNoInteractions(userRepository, passwordEncoder, registrar, tokenProvider);
+        verifyNoInteractions(userRepository, passwordEncoder, registrar, tokenService);
     }
 
     @Test
@@ -420,7 +418,7 @@ class SocialAuthServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessage(SocialAuthService.LINK_EXPIRED_MESSAGE)
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.UNAUTHORIZED);
-        verifyNoInteractions(registrar, tokenProvider);
+        verifyNoInteractions(registrar, tokenService);
     }
 
     @Test
@@ -447,7 +445,7 @@ class SocialAuthServiceTest {
                 .hasMessage(SocialAuthService.LINK_EXPIRED_MESSAGE)
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.UNAUTHORIZED);
         verify(pendingSocialLinkStore).consume(LINK_TOKEN);
-        verifyNoInteractions(passwordEncoder, registrar, tokenProvider);
+        verifyNoInteractions(passwordEncoder, registrar, tokenService);
     }
 
     @Test
@@ -472,7 +470,7 @@ class SocialAuthServiceTest {
 
         assertThatThrownBy(() -> service.link(new SocialLinkRequest(LINK_TOKEN, "pw")))
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.CONFLICT);
-        verifyNoInteractions(tokenProvider);
+        verifyNoInteractions(tokenService);
     }
 
     @Test
