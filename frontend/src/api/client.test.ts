@@ -57,6 +57,22 @@ describe('api client 401 처리', () => {
     expect(localStorage.getItem('refreshToken')).toBe('new-refresh')
   })
 
+  it('refreshSession_logoutWhileRefreshInFlight_doesNotRestoreSession', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockImplementation(async () => {
+      // refresh 응답을 기다리는 동안 사용자가 로그아웃한다
+      useAuthStore.getState().logout()
+      return { data: { data: { accessToken: 'new-access', refreshToken: 'new-refresh' } } }
+    })
+
+    await expect(client.get('/api/v1/events')).rejects.toBeDefined()
+    expect(useAuthStore.getState().accessToken).toBeNull()
+    expect(localStorage.getItem('accessToken')).toBeNull()
+    expect(localStorage.getItem('refreshToken')).toBeNull()
+  })
+
   it('동시에 여러 요청이 401을 받아도 refresh는 한 번만 호출한다', async () => {
     adapter.mockImplementation(async (config) => {
       if (config.headers.Authorization === 'Bearer new-access') return ok(config, {})

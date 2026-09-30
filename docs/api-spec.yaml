@@ -1080,7 +1080,7 @@ components:
           description: JWT — 유효기간 15분
         refreshToken:
           type: string
-          description: JWT, 1회용(재발급 시 교체) — 비활성 15일 / 최초 로그인 후 최대 30일
+          description: JWT, 재발급 시 교체(회전 직후 30초 겹침 허용) — 비활성 15일 / 최초 로그인 후 최대 30일
         tokenType:
           type: string
           example: Bearer

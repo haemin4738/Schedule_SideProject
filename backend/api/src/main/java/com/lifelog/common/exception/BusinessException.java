@@ -36,10 +36,6 @@ public class BusinessException extends RuntimeException {
         return new BusinessException(message, HttpStatus.CONFLICT);
     }
 
-    public static BusinessException conflict(String message, ErrorCode code) {
-        return new BusinessException(message, HttpStatus.CONFLICT, code);
-    }
-
     public static BusinessException unauthorized(String message) {
         return new BusinessException(message, HttpStatus.UNAUTHORIZED);
     }

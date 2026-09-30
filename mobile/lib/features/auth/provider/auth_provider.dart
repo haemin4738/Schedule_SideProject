@@ -22,7 +22,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   AuthNotifier({FlutterSecureStorage? storage, Dio? dio})
       : _storage = storage ?? const FlutterSecureStorage(),
-        _dio = dio ?? Dio(BaseOptions(baseUrl: apiBaseUrl, contentType: 'application/json')),
+        _dio = dio ??
+            Dio(BaseOptions(
+              baseUrl: apiBaseUrl,
+              contentType: 'application/json',
+              // best-effort 요청이 나쁜 네트워크에서 오래 매달리지 않게 한다
+              connectTimeout: const Duration(seconds: 5),
+              receiveTimeout: const Duration(seconds: 5),
+            )),
         super(const AuthState()) {
     // refresh 실패로 세션이 만료되면 로그인 화면으로 돌아가도록 상태를 비운다 (토큰은 dio_client가 삭제)
     onSessionExpired = _onSessionExpired;

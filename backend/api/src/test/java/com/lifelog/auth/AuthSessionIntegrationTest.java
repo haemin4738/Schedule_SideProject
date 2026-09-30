@@ -131,6 +131,7 @@ class AuthSessionIntegrationTest {
     @AfterEach
     void cleanUp() throws Exception {
         Object redis = context.getBean("stringRedisTemplate");
+        // api 모듈은 spring-data-redis 에 컴파일 의존이 없어(빌드 변경은 디렉터 승인 필요) 리플렉션으로 정리한다
         Method keys = redis.getClass().getMethod("keys", Object.class);
         Method delete = redis.getClass().getMethod("delete", Collection.class);
         for (Long userId : createdUserIds) {

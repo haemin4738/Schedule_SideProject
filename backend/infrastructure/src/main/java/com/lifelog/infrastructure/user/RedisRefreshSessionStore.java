@@ -209,6 +209,8 @@ public class RedisRefreshSessionStore implements RefreshSessionStore {
         return toOutcome(result);
     }
 
+    // 로그아웃은 jti 를 확인하지 않고 세션(sid)을 삭제한다(의도): 서명된 같은 세션의 어떤 토큰으로든 폐기할 수 있는 건
+    // 안전한 방향이고, 오래된 토큰을 /refresh 에 내면 어차피 전체 폐기된다 (RFC 7009 — 무효 토큰도 200)
     @Override
     public boolean revoke(Long userId, String sessionId) {
         if (userId == null || isBlank(sessionId)) {
@@ -269,7 +271,8 @@ public class RedisRefreshSessionStore implements RefreshSessionStore {
         try {
             return operation.get();
         } catch (DataAccessException e) {
-            log.error("refresh 세션 저장소 오류: type={}", e.getClass().getSimpleName());
+            // 응답(503)과 ERROR 로그는 GlobalExceptionHandler 가 담당한다 — 여기서는 중복 ERROR 를 피해 WARN 만 남긴다
+            log.warn("refresh 세션 저장소 오류: type={}", e.getClass().getSimpleName());
             throw new AuthSessionUnavailableException("refresh session store unavailable", e);
         }
     }

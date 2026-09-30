@@ -43,6 +43,8 @@ Dio createDio({
     final refreshToken = await storage.read(key: 'refreshToken');
     if (refreshToken == null) throw StateError('refresh token 없음');
     final res = await refreshDio.post('/api/v1/auth/refresh', data: {'refreshToken': refreshToken});
+    // 응답을 기다리는 동안 로그아웃으로 토큰이 지워졌으면 결과를 버린다 — 새 토큰을 다시 저장해 재시작 시 로그인 상태로 복원되지 않게
+    if (await storage.read(key: 'refreshToken') != refreshToken) throw StateError('refresh 중 세션이 바뀜');
     final data = res.data['data'];
     final accessToken = data['accessToken'] as String;
     // 백엔드가 refresh 토큰도 새로 발급하므로 둘 다 저장한다

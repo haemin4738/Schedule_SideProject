@@ -35,6 +35,8 @@ const refreshAccessToken = async (): Promise<string> => {
   const refreshToken = localStorage.getItem('refreshToken')
   if (!refreshToken) throw new Error('refresh token 없음')
   const { data } = await axios.post(`${baseURL}/api/v1/auth/refresh`, { refreshToken })
+  // 응답을 기다리는 동안 로그아웃(또는 다른 탭의 재로그인)으로 토큰이 바뀌었으면 결과를 버린다 — 로그아웃한 화면이 되살아나지 않게
+  if (localStorage.getItem('refreshToken') !== refreshToken) throw new Error('refresh 중 세션이 바뀜')
   // 백엔드가 refresh 토큰도 새로 발급하므로 둘 다 저장한다
   useAuthStore.getState().login(data.data.accessToken, data.data.refreshToken)
   return data.data.accessToken

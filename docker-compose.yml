@@ -23,6 +23,7 @@ services:
     container_name: lifelog-redis
     # refresh 세션 저장소(allowlist)로 쓰므로 재시작 시 스냅샷 롤백(과거 jti → 재사용 오판)을 막고,
     # 메모리 부족 시 세션 키가 임의로 제거되지 않게 한다
+    # maxmemory 를 설정하면 noeviction 때문에 캐시 쓰기도 OOM 오류가 난다 — 그때는 인증용 인스턴스/DB 분리 검토
     command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
     ports:
       - "6379:6379"

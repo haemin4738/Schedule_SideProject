@@ -23,6 +23,22 @@ class _FakeAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+/// refresh 요청을 받으면 저장소를 비운 뒤(로그아웃) 정상 refresh 응답을 돌려주는 어댑터
+class _LogoutDuringRefreshAdapter implements HttpClientAdapter {
+  _LogoutDuringRefreshAdapter(this.storage);
+
+  final FlutterSecureStorage storage;
+
+  @override
+  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) async {
+    await storage.deleteAll();
+    return _refreshed();
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
 ResponseBody _json(int status, Object body) => ResponseBody.fromString(
       jsonEncode(body),
       status,
@@ -84,6 +100,17 @@ void main() {
     expect(await storage.read(key: 'accessToken'), 'new-access');
     expect(await storage.read(key: 'refreshToken'), 'new-refresh');
     expect(sessionExpired, isFalse);
+  });
+
+  test('refresh 응답을 기다리는 동안 로그아웃하면 새 토큰을 저장하지 않는다', () async {
+    // refresh 요청이 도착한 뒤 응답 전에 로그아웃(저장소 비우기)이 일어난 상황
+    refreshDio.httpClientAdapter = _LogoutDuringRefreshAdapter(storage);
+    final api = _FakeAdapter((_) => _unauthorized());
+
+    await expectLater(dioWith(api).get('/api/v1/events'), throwsA(isA<DioException>()));
+
+    expect(await storage.read(key: 'accessToken'), isNull);
+    expect(await storage.read(key: 'refreshToken'), isNull);
   });
 
   test('동시에 여러 요청이 401을 받아도 refresh는 한 번만 호출한다', () async {
