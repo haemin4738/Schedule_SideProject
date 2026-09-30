@@ -216,4 +216,83 @@ class JwtTokenProviderTest {
         assertThatThrownBy(() -> new JwtTokenProvider(SECRET, ONE_HOUR, 0, ONE_HOUR, Clock.systemUTC()))
                 .isInstanceOf(IllegalStateException.class);
     }
+
+    /** 필수 클레임을 하나씩 바꿔 끼울 수 있는 refresh 토큰 빌더 (null 이면 해당 클레임 생략) */
+    private static String customRefresh(String subject, String jti, Object sid, Object authTime, Date expiration) {
+        var builder = Jwts.builder().claim("type", "refresh").issuedAt(new Date());
+        if (subject != null) builder.subject(subject);
+        if (jti != null) builder.id(jti);
+        if (sid != null) builder.claim("sid", sid);
+        if (authTime != null) builder.claim("auth_time", authTime);
+        if (expiration != null) builder.expiration(expiration);
+        return builder.signWith(key(SECRET)).compact();
+    }
+
+    private static Date inOneHour() {
+        return new Date(System.currentTimeMillis() + ONE_HOUR);
+    }
+
+    @Test
+    void parseRefreshToken_whenAllCustomClaimsPresent_returnsClaims() {
+        // customRefresh 빌더 자체가 유효한 토큰을 만든다는 기준선
+        long authTime = Instant.now().getEpochSecond();
+        String token = customRefresh("42", "jti-1", "sid-1", authTime, inOneHour());
+
+        assertThat(provider.parseRefreshToken(token)).hasValueSatisfying(c -> {
+            assertThat(c.userId()).isEqualTo(42L);
+            assertThat(c.sessionId()).isEqualTo("sid-1");
+            assertThat(c.tokenId()).isEqualTo("jti-1");
+            assertThat(c.authTime()).isEqualTo(Instant.ofEpochSecond(authTime));
+        });
+    }
+
+    @Test
+    void parseRefreshToken_whenSubjectNotNumeric_returnsEmpty() {
+        String token = customRefresh("abc", "jti-1", "sid-1", Instant.now().getEpochSecond(), inOneHour());
+
+        assertThat(provider.parseRefreshToken(token)).isEmpty();
+    }
+
+    @Test
+    void parseRefreshToken_whenOnlyJtiMissingOrBlank_returnsEmpty() {
+        long authTime = Instant.now().getEpochSecond();
+
+        assertThat(provider.parseRefreshToken(customRefresh("42", null, "sid-1", authTime, inOneHour()))).isEmpty();
+        assertThat(provider.parseRefreshToken(customRefresh("42", "  ", "sid-1", authTime, inOneHour()))).isEmpty();
+    }
+
+    @Test
+    void parseRefreshToken_whenOnlySidMissingBlankOrNotString_returnsEmpty() {
+        long authTime = Instant.now().getEpochSecond();
+
+        assertThat(provider.parseRefreshToken(customRefresh("42", "jti-1", null, authTime, inOneHour()))).isEmpty();
+        assertThat(provider.parseRefreshToken(customRefresh("42", "jti-1", " ", authTime, inOneHour()))).isEmpty();
+        assertThat(provider.parseRefreshToken(customRefresh("42", "jti-1", 123, authTime, inOneHour()))).isEmpty();
+    }
+
+    @Test
+    void parseRefreshToken_whenOnlyAuthTimeMissingOrNotNumber_returnsEmpty() {
+        assertThat(provider.parseRefreshToken(customRefresh("42", "jti-1", "sid-1", null, inOneHour()))).isEmpty();
+        assertThat(provider.parseRefreshToken(customRefresh("42", "jti-1", "sid-1", "yesterday", inOneHour()))).isEmpty();
+    }
+
+    @Test
+    void parseRefreshToken_whenExpirationMissing_returnsEmpty() {
+        String token = customRefresh("42", "jti-1", "sid-1", Instant.now().getEpochSecond(), null);
+
+        assertThat(provider.parseRefreshToken(token)).isEmpty();
+    }
+
+    @Test
+    void parseRefreshToken_whenInjectedClockPastExpiration_returnsEmpty() {
+        // 만료 판정이 시스템 시계가 아니라 주입된 Clock 을 따른다
+        Instant issuedAt = Instant.parse("2026-09-01T00:00:00Z");
+        JwtTokenProvider issuer = create(SECRET, ONE_HOUR, ONE_HOUR, Clock.fixed(issuedAt, ZoneOffset.UTC));
+        String token = issuer.createRefreshToken(USER_ID, "sid-1", "jti-1", issuedAt, issuedAt.plusMillis(ONE_HOUR));
+
+        assertThat(issuer.parseRefreshToken(token)).isPresent();
+        JwtTokenProvider later = create(SECRET, ONE_HOUR, ONE_HOUR,
+                Clock.fixed(issuedAt.plusMillis(ONE_HOUR).plusSeconds(1), ZoneOffset.UTC));
+        assertThat(later.parseRefreshToken(token)).isEmpty();
+    }
 }
