@@ -1,5 +1,6 @@
 package com.lifelog.infrastructure.oauth;
 
+import com.lifelog.infrastructure.config.HttpClientFactories;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -8,8 +9,6 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestTemplate;
-
-import java.net.http.HttpClient;
 
 @Configuration
 @EnableConfigurationProperties(OAuthProviderProperties.class)
@@ -37,12 +36,6 @@ public class OAuthClientConfig {
     }
 
     private static JdkClientHttpRequestFactory requestFactory(OAuthProviderProperties.Http http) {
-        HttpClient httpClient = HttpClient.newBuilder()
-                .connectTimeout(http.connectTimeout())
-                .followRedirects(HttpClient.Redirect.NEVER)
-                .build();
-        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
-        factory.setReadTimeout(http.readTimeout());
-        return factory;
+        return HttpClientFactories.jdk(http.connectTimeout(), http.readTimeout());
     }
 }
