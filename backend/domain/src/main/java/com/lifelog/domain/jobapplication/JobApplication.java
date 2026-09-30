@@ -7,7 +7,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "job_applications")
+@Table(name = "job_applications",
+        indexes = {
+                @Index(name = "idx_job_applications_user_applied", columnList = "user_id, applied_at")
+        })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class JobApplication {
@@ -29,7 +32,7 @@ public class JobApplication {
     @Column(nullable = false)
     private JobApplicationStatus status;
 
-    @Column(nullable = false)
+    @Column(name = "applied_at", nullable = false)
     private LocalDate appliedAt;
 
     private String jobPostingUrl;

@@ -4,6 +4,7 @@ import com.lifelog.domain.expense.Expense;
 import com.lifelog.domain.expense.ExpenseCategory;
 import com.lifelog.domain.expense.ExpenseCategoryRepository;
 import com.lifelog.domain.expense.ExpenseCategoryTotal;
+import com.lifelog.domain.expense.ExpenseDailyTotal;
 import com.lifelog.domain.expense.ExpenseMonthlyTotal;
 import com.lifelog.domain.expense.ExpenseRepository;
 import com.lifelog.domain.expense.ExpenseType;
@@ -342,5 +343,60 @@ class ExpenseRepositoryImplTest {
         assertThat(food.getId()).isLessThan(transport.getId());
         assertThat(result).extracting(ExpenseCategoryTotal::categoryId)
                 .containsExactly(food.getId(), transport.getId());
+    }
+
+    // ---- 일별 집계 ----
+
+    @Test
+    void sumDailyByUserId_whenMultipleDaysAndTypes_groupsByDateAndTypeOrderedByDate() {
+        save(user1, food, 1_000L, LocalDate.of(2026, 9, 1));        // 시작 경계일
+        save(user1, transport, 2_000L, LocalDate.of(2026, 9, 1));   // 같은 날·같은 유형 → 합산
+        save(user1, salary, 100_000L, LocalDate.of(2026, 9, 1));    // 같은 날·다른 유형 → 별도 행
+        save(user1, food, 3_000L, LocalDate.of(2026, 9, 30));       // 종료 경계일
+        save(user1, food, 5_000L, LocalDate.of(2026, 9, 15));
+        save(user1, food, 7_000L, LocalDate.of(2026, 8, 31));       // 범위 밖(이전)
+        save(user1, food, 9_000L, LocalDate.of(2026, 10, 1));       // 범위 밖(이후)
+        save(user2, otherUserFood, 50_000L, LocalDate.of(2026, 9, 15)); // 타인
+        flushAndClear();
+
+        List<ExpenseDailyTotal> result = expenseRepository.sumDailyByUserId(user1.getId(),
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30));
+
+        assertThat(result)
+                .extracting(ExpenseDailyTotal::date, ExpenseDailyTotal::type, ExpenseDailyTotal::total)
+                .containsExactlyInAnyOrder(
+                        tuple(LocalDate.of(2026, 9, 1), ExpenseType.EXPENSE, 3_000L),
+                        tuple(LocalDate.of(2026, 9, 1), ExpenseType.INCOME, 100_000L),
+                        tuple(LocalDate.of(2026, 9, 15), ExpenseType.EXPENSE, 5_000L),
+                        tuple(LocalDate.of(2026, 9, 30), ExpenseType.EXPENSE, 3_000L));
+        assertThat(result).extracting(ExpenseDailyTotal::date)
+                .isSortedAccordingTo(LocalDate::compareTo);
+    }
+
+    @Test
+    void sumDailyByUserId_whenSingleDayRange_returnsOnlyThatDay() {
+        save(user1, food, 1_000L, LocalDate.of(2026, 9, 9));
+        save(user1, food, 2_000L, LocalDate.of(2026, 9, 10));
+        save(user1, food, 4_000L, LocalDate.of(2026, 9, 10));
+        save(user1, food, 8_000L, LocalDate.of(2026, 9, 11));
+        flushAndClear();
+
+        LocalDate day = LocalDate.of(2026, 9, 10);
+        List<ExpenseDailyTotal> result = expenseRepository.sumDailyByUserId(user1.getId(), day, day);
+
+        assertThat(result)
+                .extracting(ExpenseDailyTotal::date, ExpenseDailyTotal::type, ExpenseDailyTotal::total)
+                .containsExactly(tuple(day, ExpenseType.EXPENSE, 6_000L));
+    }
+
+    @Test
+    void sumDailyByUserId_whenOnlyOtherUsersData_returnsEmptyList() {
+        save(user2, otherUserFood, 50_000L, LocalDate.of(2026, 9, 15));
+        flushAndClear();
+
+        List<ExpenseDailyTotal> result = expenseRepository.sumDailyByUserId(user1.getId(),
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30));
+
+        assertThat(result).isEmpty();
     }
 }

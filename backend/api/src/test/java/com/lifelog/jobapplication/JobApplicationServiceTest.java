@@ -196,9 +196,9 @@ class JobApplicationServiceTest {
         List<JobApplication> jobApplications = List.of(ownedJobApplication(1L, owner), ownedJobApplication(2L, owner));
         Pageable pageable = PageRequest.of(0, 20);
         Page<JobApplication> page = new PageImpl<>(jobApplications, pageable, 2);
-        when(jobApplicationRepository.findByUserIdAndStatus(1L, null, pageable)).thenReturn(page);
+        when(jobApplicationRepository.findByUserIdAndFilter(1L, null, null, null, pageable)).thenReturn(page);
 
-        Page<JobApplicationSummary> result = jobApplicationService.list(1L, null, pageable);
+        Page<JobApplicationSummary> result = jobApplicationService.list(1L, null, null, null, pageable);
 
         assertThat(result.getTotalElements()).isEqualTo(2);
         assertThat(result.getContent()).hasSize(2);
@@ -209,12 +209,12 @@ class JobApplicationServiceTest {
         List<JobApplication> jobApplications = List.of(ownedJobApplication(1L, owner));
         Pageable pageable = PageRequest.of(0, 20);
         Page<JobApplication> page = new PageImpl<>(jobApplications, pageable, 1);
-        when(jobApplicationRepository.findByUserIdAndStatus(1L, JobApplicationStatus.APPLIED, pageable)).thenReturn(page);
+        when(jobApplicationRepository.findByUserIdAndFilter(1L, JobApplicationStatus.APPLIED, null, null, pageable)).thenReturn(page);
 
-        Page<JobApplicationSummary> result = jobApplicationService.list(1L, JobApplicationStatus.APPLIED, pageable);
+        Page<JobApplicationSummary> result = jobApplicationService.list(1L, JobApplicationStatus.APPLIED, null, null, pageable);
 
         assertThat(result.getTotalElements()).isEqualTo(1);
-        verify(jobApplicationRepository).findByUserIdAndStatus(1L, JobApplicationStatus.APPLIED, pageable);
+        verify(jobApplicationRepository).findByUserIdAndFilter(1L, JobApplicationStatus.APPLIED, null, null, pageable);
     }
 
     @Test
@@ -222,11 +222,48 @@ class JobApplicationServiceTest {
         List<JobApplication> jobApplications = List.of(ownedJobApplication(3L, owner));
         Pageable pageable = PageRequest.of(1, 2);
         Page<JobApplication> page = new PageImpl<>(jobApplications, pageable, 3);
-        when(jobApplicationRepository.findByUserIdAndStatus(1L, null, pageable)).thenReturn(page);
+        when(jobApplicationRepository.findByUserIdAndFilter(1L, null, null, null, pageable)).thenReturn(page);
 
-        Page<JobApplicationSummary> result = jobApplicationService.list(1L, null, pageable);
+        Page<JobApplicationSummary> result = jobApplicationService.list(1L, null, null, null, pageable);
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).id()).isEqualTo(3L);
+    }
+
+    @Test
+    void listJobApplications_whenRangeGiven_passesFromToToRepository() {
+        Pageable pageable = PageRequest.of(0, 20);
+        LocalDate from = LocalDate.of(2026, 9, 1);
+        LocalDate to = LocalDate.of(2026, 9, 30);
+        when(jobApplicationRepository.findByUserIdAndFilter(1L, JobApplicationStatus.APPLIED, from, to, pageable))
+                .thenReturn(new PageImpl<>(List.of(ownedJobApplication(1L, owner)), pageable, 1));
+
+        Page<JobApplicationSummary> result = jobApplicationService.list(1L, JobApplicationStatus.APPLIED, from, to, pageable);
+
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        verify(jobApplicationRepository).findByUserIdAndFilter(1L, JobApplicationStatus.APPLIED, from, to, pageable);
+    }
+
+    @Test
+    void listJobApplications_whenFromEqualsTo_isAllowed() {
+        Pageable pageable = PageRequest.of(0, 20);
+        LocalDate day = LocalDate.of(2026, 9, 10);
+        when(jobApplicationRepository.findByUserIdAndFilter(1L, null, day, day, pageable))
+                .thenReturn(new PageImpl<>(List.of(), pageable, 0));
+
+        Page<JobApplicationSummary> result = jobApplicationService.list(1L, null, day, day, pageable);
+
+        assertThat(result.getContent()).isEmpty();
+    }
+
+    @Test
+    void listJobApplications_whenFromAfterTo_throwsBadRequestAndSkipsQuery() {
+        assertThatThrownBy(() -> jobApplicationService.list(1L, null,
+                LocalDate.of(2026, 10, 1), LocalDate.of(2026, 9, 30), PageRequest.of(0, 20)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getStatus())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+
+        verifyNoInteractions(jobApplicationRepository);
     }
 }

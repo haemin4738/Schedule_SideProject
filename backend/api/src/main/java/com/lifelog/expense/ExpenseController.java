@@ -4,6 +4,7 @@ import com.lifelog.common.dto.ApiResponse;
 import com.lifelog.common.dto.PagedResponse;
 import com.lifelog.domain.expense.ExpenseType;
 import com.lifelog.expense.dto.CategorySummaryResponse;
+import com.lifelog.expense.dto.DailySummaryResponse;
 import com.lifelog.expense.dto.ExpenseRequest;
 import com.lifelog.expense.dto.ExpenseResponse;
 import com.lifelog.expense.dto.ExpenseSummary;
@@ -82,6 +83,14 @@ public class ExpenseController {
             @RequestParam @DateTimeFormat(pattern = "yyyy-MM") YearMonth from,
             @RequestParam @DateTimeFormat(pattern = "yyyy-MM") YearMonth to) {
         return ApiResponse.ok(expenseSummaryService.monthly(userId, from, to));
+    }
+
+    @GetMapping("/summary/daily")
+    public ApiResponse<DailySummaryResponse> dailySummary(
+            @AuthenticationPrincipal Long userId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ApiResponse.ok(expenseSummaryService.daily(userId, from, to));
     }
 
     @GetMapping("/summary/by-category")

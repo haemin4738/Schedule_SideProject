@@ -17,10 +17,14 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -111,37 +115,37 @@ class JobApplicationRepositoryImplTest {
     }
 
     @Test
-    void findByUserIdAndStatus_whenStatusNull_returnsAllForUser() {
+    void findByUserIdAndFilter_whenStatusNull_returnsAllForUser() {
         jobApplicationRepository.save(newJobApplication(user1, "회사A", JobApplicationStatus.APPLIED, LocalDate.of(2026, 1, 5)));
         jobApplicationRepository.save(newJobApplication(user1, "회사B", JobApplicationStatus.INTERVIEW_SCHEDULED, LocalDate.of(2026, 1, 10)));
         jobApplicationRepository.save(newJobApplication(user2, "다른유저 회사", JobApplicationStatus.APPLIED, LocalDate.of(2026, 1, 10)));
         entityManager.flush();
         entityManager.clear();
 
-        Page<JobApplication> page = jobApplicationRepository.findByUserIdAndStatus(
-                user1.getId(), null, PageRequest.of(0, 10));
+        Page<JobApplication> page = jobApplicationRepository.findByUserIdAndFilter(
+                user1.getId(), null, null, null, PageRequest.of(0, 10));
 
         assertThat(page.getTotalElements()).isEqualTo(2);
         assertThat(page.getContent()).allMatch(j -> j.getUser().getId().equals(user1.getId()));
     }
 
     @Test
-    void findByUserIdAndStatus_whenStatusGiven_filtersByStatus() {
+    void findByUserIdAndFilter_whenStatusGiven_filtersByStatus() {
         jobApplicationRepository.save(newJobApplication(user1, "회사A", JobApplicationStatus.APPLIED, LocalDate.of(2026, 1, 5)));
         jobApplicationRepository.save(newJobApplication(user1, "회사B", JobApplicationStatus.INTERVIEW_SCHEDULED, LocalDate.of(2026, 1, 10)));
         jobApplicationRepository.save(newJobApplication(user1, "회사C", JobApplicationStatus.APPLIED, LocalDate.of(2026, 1, 15)));
         entityManager.flush();
         entityManager.clear();
 
-        Page<JobApplication> page = jobApplicationRepository.findByUserIdAndStatus(
-                user1.getId(), JobApplicationStatus.APPLIED, PageRequest.of(0, 10));
+        Page<JobApplication> page = jobApplicationRepository.findByUserIdAndFilter(
+                user1.getId(), JobApplicationStatus.APPLIED, null, null, PageRequest.of(0, 10));
 
         assertThat(page.getTotalElements()).isEqualTo(2);
         assertThat(page.getContent()).allMatch(j -> j.getStatus() == JobApplicationStatus.APPLIED);
     }
 
     @Test
-    void findByUserIdAndStatus_whenPaginated_returnsRequestedPageOnly() {
+    void findByUserIdAndFilter_whenPaginated_returnsRequestedPageOnly() {
         jobApplicationRepository.save(newJobApplication(user1, "회사A", JobApplicationStatus.APPLIED, LocalDate.of(2026, 1, 5)));
         jobApplicationRepository.save(newJobApplication(user1, "회사B", JobApplicationStatus.APPLIED, LocalDate.of(2026, 1, 10)));
         jobApplicationRepository.save(newJobApplication(user1, "회사C", JobApplicationStatus.APPLIED, LocalDate.of(2026, 1, 15)));
@@ -149,16 +153,133 @@ class JobApplicationRepositoryImplTest {
         entityManager.clear();
 
         Pageable firstPage = PageRequest.of(0, 2);
-        Page<JobApplication> page = jobApplicationRepository.findByUserIdAndStatus(user1.getId(), null, firstPage);
+        Page<JobApplication> page = jobApplicationRepository.findByUserIdAndFilter(user1.getId(), null, null, null, firstPage);
 
         assertThat(page.getTotalElements()).isEqualTo(3);
         assertThat(page.getTotalPages()).isEqualTo(2);
         assertThat(page.getContent()).hasSize(2);
 
         Pageable secondPage = PageRequest.of(1, 2);
-        Page<JobApplication> page2 = jobApplicationRepository.findByUserIdAndStatus(user1.getId(), null, secondPage);
+        Page<JobApplication> page2 = jobApplicationRepository.findByUserIdAndFilter(user1.getId(), null, null, null, secondPage);
 
         assertThat(page2.getContent()).hasSize(1);
         assertThat(page2.getNumber()).isEqualTo(1);
+    }
+
+    @Test
+    void findByUserIdAndFilter_whenFromToGiven_includesBothEnds() {
+        jobApplicationRepository.save(newJobApplication(user1, "이전", JobApplicationStatus.APPLIED, LocalDate.of(2026, 8, 31)));
+        jobApplicationRepository.save(newJobApplication(user1, "시작일", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 1)));
+        jobApplicationRepository.save(newJobApplication(user1, "중간", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 15)));
+        jobApplicationRepository.save(newJobApplication(user1, "종료일", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 30)));
+        jobApplicationRepository.save(newJobApplication(user1, "이후", JobApplicationStatus.APPLIED, LocalDate.of(2026, 10, 1)));
+        jobApplicationRepository.save(newJobApplication(user2, "타인", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 15)));
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<JobApplication> page = jobApplicationRepository.findByUserIdAndFilter(user1.getId(), null,
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), PageRequest.of(0, 10));
+
+        assertThat(page.getTotalElements()).isEqualTo(3);
+        assertThat(page.getContent()).extracting(JobApplication::getCompanyName)
+                .containsExactly("종료일", "중간", "시작일");
+    }
+
+    @Test
+    void findByUserIdAndFilter_whenOnlyFromGiven_appliesLowerBoundOnly() {
+        jobApplicationRepository.save(newJobApplication(user1, "이전", JobApplicationStatus.APPLIED, LocalDate.of(2026, 8, 31)));
+        jobApplicationRepository.save(newJobApplication(user1, "시작일", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 1)));
+        jobApplicationRepository.save(newJobApplication(user1, "먼 미래", JobApplicationStatus.APPLIED, LocalDate.of(2027, 3, 1)));
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<JobApplication> page = jobApplicationRepository.findByUserIdAndFilter(user1.getId(), null,
+                LocalDate.of(2026, 9, 1), null, PageRequest.of(0, 10));
+
+        assertThat(page.getContent()).extracting(JobApplication::getCompanyName)
+                .containsExactly("먼 미래", "시작일");
+    }
+
+    @Test
+    void findByUserIdAndFilter_whenOnlyToGiven_appliesUpperBoundOnly() {
+        jobApplicationRepository.save(newJobApplication(user1, "먼 과거", JobApplicationStatus.APPLIED, LocalDate.of(2020, 1, 1)));
+        jobApplicationRepository.save(newJobApplication(user1, "종료일", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 30)));
+        jobApplicationRepository.save(newJobApplication(user1, "이후", JobApplicationStatus.APPLIED, LocalDate.of(2026, 10, 1)));
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<JobApplication> page = jobApplicationRepository.findByUserIdAndFilter(user1.getId(), null,
+                null, LocalDate.of(2026, 9, 30), PageRequest.of(0, 10));
+
+        assertThat(page.getContent()).extracting(JobApplication::getCompanyName)
+                .containsExactly("종료일", "먼 과거");
+    }
+
+    @Test
+    void findByUserIdAndFilter_whenStatusAndRangeGiven_appliesBoth() {
+        jobApplicationRepository.save(newJobApplication(user1, "기간내 지원", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 10)));
+        jobApplicationRepository.save(newJobApplication(user1, "기간내 면접", JobApplicationStatus.INTERVIEW_SCHEDULED, LocalDate.of(2026, 9, 11)));
+        jobApplicationRepository.save(newJobApplication(user1, "기간외 지원", JobApplicationStatus.APPLIED, LocalDate.of(2026, 10, 10)));
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<JobApplication> page = jobApplicationRepository.findByUserIdAndFilter(user1.getId(),
+                JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), PageRequest.of(0, 10));
+
+        assertThat(page.getTotalElements()).isEqualTo(1);
+        assertThat(page.getContent()).extracting(JobApplication::getCompanyName).containsExactly("기간내 지원");
+    }
+
+    @Test
+    void findByUserIdAndFilter_whenAppliedAtTies_ordersByIdDesc() {
+        JobApplication first = jobApplicationRepository.save(
+                newJobApplication(user1, "먼저", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 10)));
+        JobApplication second = jobApplicationRepository.save(
+                newJobApplication(user1, "나중", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 10)));
+        JobApplication older = jobApplicationRepository.save(
+                newJobApplication(user1, "과거", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 1)));
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<JobApplication> page = jobApplicationRepository.findByUserIdAndFilter(user1.getId(), null,
+                null, null, PageRequest.of(0, 10));
+
+        assertThat(page.getContent()).extracting(JobApplication::getId)
+                .containsExactly(second.getId(), first.getId(), older.getId());
+    }
+
+    @Test
+    void findByUserIdAndFilter_whenCallerPassesSort_ignoresItAndKeepsFixedOrder() {
+        JobApplication early = jobApplicationRepository.save(
+                newJobApplication(user1, "A", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 1)));
+        JobApplication late = jobApplicationRepository.save(
+                newJobApplication(user1, "B", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 20)));
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<JobApplication> page = jobApplicationRepository.findByUserIdAndFilter(user1.getId(), null,
+                null, null, PageRequest.of(0, 10, Sort.by("appliedAt").ascending()));
+
+        assertThat(page.getContent()).extracting(JobApplication::getId)
+                .containsExactly(late.getId(), early.getId());
+    }
+
+    @Test
+    void findByUserIdAndFilter_whenPagedAcrossTiedDates_returnsEachRowExactlyOnce() {
+        for (int i = 0; i < 5; i++) {
+            jobApplicationRepository.save(
+                    newJobApplication(user1, "동일일자" + i, JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 10)));
+        }
+        entityManager.flush();
+        entityManager.clear();
+
+        List<Long> ids = new ArrayList<>();
+        for (int p = 0; p < 3; p++) {
+            ids.addAll(jobApplicationRepository.findByUserIdAndFilter(user1.getId(), null, null, null,
+                    PageRequest.of(p, 2)).getContent().stream().map(JobApplication::getId).toList());
+        }
+
+        assertThat(ids).hasSize(5).doesNotHaveDuplicates();
+        assertThat(ids).isSortedAccordingTo(Comparator.reverseOrder());
     }
 }

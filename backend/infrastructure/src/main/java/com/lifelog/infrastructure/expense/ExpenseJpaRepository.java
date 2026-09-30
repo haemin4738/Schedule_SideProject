@@ -2,6 +2,7 @@ package com.lifelog.infrastructure.expense;
 
 import com.lifelog.domain.expense.Expense;
 import com.lifelog.domain.expense.ExpenseCategoryTotal;
+import com.lifelog.domain.expense.ExpenseDailyTotal;
 import com.lifelog.domain.expense.ExpenseMonthlyTotal;
 import com.lifelog.domain.expense.ExpenseType;
 import org.springframework.data.domain.Page;
@@ -45,6 +46,16 @@ interface ExpenseJpaRepository extends JpaRepository<Expense, Long> {
     List<ExpenseMonthlyTotal> sumMonthlyByUserId(@Param("userId") Long userId,
                                                  @Param("from") LocalDate from,
                                                  @Param("to") LocalDate to);
+
+    @Query("SELECT new com.lifelog.domain.expense.ExpenseDailyTotal(" +
+           "e.transactionDate, e.type, SUM(e.amount)) " +
+           "FROM Expense e " +
+           "WHERE e.user.id = :userId AND e.transactionDate BETWEEN :from AND :to " +
+           "GROUP BY e.transactionDate, e.type " +
+           "ORDER BY e.transactionDate ASC, e.type ASC")
+    List<ExpenseDailyTotal> sumDailyByUserId(@Param("userId") Long userId,
+                                             @Param("from") LocalDate from,
+                                             @Param("to") LocalDate to);
 
     @Query("SELECT new com.lifelog.domain.expense.ExpenseCategoryTotal(" +
            "c.id, c.name, SUM(e.amount), COUNT(e)) " +

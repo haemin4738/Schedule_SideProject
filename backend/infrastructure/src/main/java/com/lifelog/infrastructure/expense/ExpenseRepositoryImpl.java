@@ -2,6 +2,7 @@ package com.lifelog.infrastructure.expense;
 
 import com.lifelog.domain.expense.Expense;
 import com.lifelog.domain.expense.ExpenseCategoryTotal;
+import com.lifelog.domain.expense.ExpenseDailyTotal;
 import com.lifelog.domain.expense.ExpenseMonthlyTotal;
 import com.lifelog.domain.expense.ExpenseRepository;
 import com.lifelog.domain.expense.ExpenseType;
@@ -43,6 +44,11 @@ public class ExpenseRepositoryImpl implements ExpenseRepository {
     @Override
     public List<ExpenseMonthlyTotal> sumMonthlyByUserId(Long userId, LocalDate from, LocalDate to) {
         return jpa.sumMonthlyByUserId(userId, from, to);
+    }
+
+    @Override
+    public List<ExpenseDailyTotal> sumDailyByUserId(Long userId, LocalDate from, LocalDate to) {
+        return jpa.sumDailyByUserId(userId, from, to);
     }
 
     @Override

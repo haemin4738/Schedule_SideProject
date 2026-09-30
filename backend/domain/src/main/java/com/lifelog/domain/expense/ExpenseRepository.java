@@ -15,6 +15,8 @@ public interface ExpenseRepository {
                                         ExpenseType type, Long categoryId, Pageable pageable);
     boolean existsByCategoryId(Long categoryId);
     List<ExpenseMonthlyTotal> sumMonthlyByUserId(Long userId, LocalDate from, LocalDate to);
+    /** from/to 양끝 포함. (날짜, 유형)별 합계, 내역 있는 날짜만 반환, 날짜 오름차순. */
+    List<ExpenseDailyTotal> sumDailyByUserId(Long userId, LocalDate from, LocalDate to);
     List<ExpenseCategoryTotal> sumByCategory(Long userId, ExpenseType type, LocalDate from, LocalDate to);
     void delete(Expense expense);
 }

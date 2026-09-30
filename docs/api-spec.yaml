@@ -17,6 +17,8 @@ tags:
     description: 가계부 카테고리 관리
   - name: expenses
     description: 가계부 내역 CRUD / 요약
+  - name: job-applications
+    description: 구직활동(지원 내역) 관리 — 현재 스펙에는 목록 조회만 기술
 
 # ------------------------------------------------------------------
 # 보안: 모든 엔드포인트는 기본적으로 BearerAuth 필요
@@ -835,6 +837,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse_Error'
 
+  /expenses/summary/daily:
+    get:
+      tags: [expenses]
+      summary: 일별 수입/지출 요약
+      description: |
+        내역이 있는 날짜만 포함한다(sparse). 내역이 없는 날짜는 days 에 나타나지 않으며,
+        클라이언트는 누락된 날짜를 0으로 간주한다. (월별 요약은 빈 달을 0으로 채우는 dense 응답이다.)
+        days 는 날짜 오름차순. 최대 366일. 캐시 없음.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: 조회 시작일 (포함)
+          schema:
+            type: string
+            format: date
+            example: '2026-09-01'
+        - name: to
+          in: query
+          required: true
+          description: 조회 종료일 (포함). from보다 이르면 400
+          schema:
+            type: string
+            format: date
+            example: '2026-09-30'
+      responses:
+        '200':
+          description: 일별 요약
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_DailySummaryResponse'
+        '400':
+          description: 파라미터 누락/형식 오류, from > to, 366일 초과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+
   /expenses/summary/by-category:
     get:
       tags: [expenses]
@@ -869,6 +910,60 @@ paths:
                 $ref: '#/components/schemas/ApiResponse_CategorySummaryResponse'
         '400':
           description: 파라미터 누락/형식 오류, from > to, 366일 초과
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+
+  # ================================================================
+  # JOB APPLICATIONS
+  # ================================================================
+  /job-applications:
+    get:
+      tags: [job-applications]
+      summary: 구직활동 목록 조회
+      description: 지원일(appliedAt) 내림차순, 같은 날짜는 id 내림차순. 모든 필터는 선택이며 함께 쓰면 AND 조건.
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/JobApplicationStatus'
+        - name: from
+          in: query
+          description: 지원일 조회 시작일 (포함)
+          schema:
+            type: string
+            format: date
+            example: '2026-09-01'
+        - name: to
+          in: query
+          description: 지원일 조회 종료일 (포함). from보다 이르면 400
+          schema:
+            type: string
+            format: date
+            example: '2026-09-30'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: 지원 내역 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedResponse_JobApplicationSummary'
+        '400':
+          description: 잘못된 파라미터 (from > to, 날짜 형식 오류, status 값 오류, size 범위 초과 등)
           content:
             application/json:
               schema:
@@ -998,6 +1093,26 @@ components:
         data:
           $ref: '#/components/schemas/CategorySummaryResponse'
         error: { type: string, nullable: true, example: null }
+
+    ApiResponse_DailySummaryResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          $ref: '#/components/schemas/DailySummaryResponse'
+        error: { type: string, nullable: true, example: null }
+
+    PagedResponse_JobApplicationSummary:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobApplicationSummary'
+        error: { type: string, nullable: true, example: null }
+        meta:
+          $ref: '#/components/schemas/PageMeta'
 
     PagedResponse_ExpenseSummary:
       type: object
@@ -1378,3 +1493,42 @@ components:
         categoryName: { type: string }
         amount: { type: integer, format: int64 }
         count: { type: integer, format: int64 }
+
+    DailySummaryResponse:
+      type: object
+      properties:
+        from: { type: string, format: date, example: '2026-09-01' }
+        to: { type: string, format: date, example: '2026-09-30' }
+        totalIncome: { type: integer, format: int64 }
+        totalExpense: { type: integer, format: int64 }
+        net: { type: integer, format: int64, description: totalIncome - totalExpense }
+        days:
+          type: array
+          description: 내역이 있는 날짜만 포함(sparse), 날짜 오름차순
+          items:
+            $ref: '#/components/schemas/DailyItem'
+
+    DailyItem:
+      type: object
+      properties:
+        date: { type: string, format: date, example: '2026-09-03' }
+        income: { type: integer, format: int64 }
+        expense: { type: integer, format: int64 }
+        net: { type: integer, format: int64, description: income - expense }
+
+    # ── Job Applications ───────────────────────────────────────────
+    JobApplicationStatus:
+      type: string
+      enum: [APPLIED, DOCUMENT_PASS, DOCUMENT_FAIL, INTERVIEW_SCHEDULED, INTERVIEW_PASS,
+             INTERVIEW_FAIL, OFFER, ACCEPTED, REJECTED, WITHDRAWN]
+
+    JobApplicationSummary:
+      description: 목록 조회용 — jobPostingUrl, memo 및 시각 필드 제외
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 1 }
+        companyName: { type: string, example: 회사A }
+        position: { type: string, example: 백엔드 개발자 }
+        status:
+          $ref: '#/components/schemas/JobApplicationStatus'
+        appliedAt: { type: string, format: date, example: '2026-09-10' }
