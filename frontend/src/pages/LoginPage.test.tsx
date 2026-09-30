@@ -18,7 +18,7 @@ const ORIGIN = 'http://localhost:3000'
 
 function LocationStateProbe() {
   const location = useLocation()
-  return <output data-testid="location-state">{JSON.stringify(location.state)}</output>
+  return <pre data-testid="location-state">{JSON.stringify(location.state)}</pre>
 }
 
 const renderLogin = (state?: unknown) =>
@@ -186,6 +186,40 @@ describe('LoginPage', () => {
     it('LoginPage_noRouterState_showsNoAlert', () => {
       renderLogin()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
     })
+
+    it('LoginPage_noticeInRouterState_showsStatusNotAlertAndClearsHistoryState', async () => {
+      renderLogin({ notice: '가입이 완료되었습니다. 로그인해 주세요.' })
+
+      expect(screen.getByRole('status')).toHaveTextContent('가입이 완료되었습니다. 로그인해 주세요.')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      await waitFor(() => expect(screen.getByTestId('location-state')).toHaveTextContent('null'))
+      expect(screen.getByRole('status')).toHaveTextContent('가입이 완료되었습니다. 로그인해 주세요.')
+    })
+
+    it('LoginPage_loginFailsAfterNotice_showsOnlyError', async () => {
+      const user = userEvent.setup()
+      mockedLogin.mockRejectedValue(new Error('Network Error'))
+      renderLogin({ notice: '가입이 완료되었습니다. 로그인해 주세요.' })
+
+      await user.type(screen.getByLabelText('이메일'), 'a@b.com')
+      await user.type(screen.getByLabelText('비밀번호'), 'pw')
+      await user.click(screen.getByRole('button', { name: '로그인' }))
+
+      expect(await screen.findByRole('alert')).toBeInTheDocument()
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+
+      // 재시도 중 오류가 지워져도 가입 안내가 다시 나타나지 않는다
+      mockedLogin.mockReturnValue(new Promise(() => {}))
+      await user.click(screen.getByRole('button', { name: '로그인' }))
+      await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    })
+  })
+
+  it('LoginPage_render_linksToSignupPage', () => {
+    renderLogin()
+    expect(screen.getByRole('link', { name: '회원가입' })).toHaveAttribute('href', '/signup')
   })
 })
