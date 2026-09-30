@@ -180,6 +180,57 @@ class EventRepositoryImplTest {
     }
 
     @Test
+    void findAllByUserIdAndDateRange_whenEventSpansIntoRange_includesOverlappingEvents() {
+        // 1/28 ~ 2/2 에 걸친 여러 날 일정은 2월 조회에도 나와야 한다
+        eventRepository.save(Event.create(user1, "걸친 일정", "설명",
+                LocalDateTime.of(2026, 1, 28, 9, 0), LocalDateTime.of(2026, 2, 2, 18, 0),
+                true, "장소", "#FFFFFF", EventCategory.PERSONAL));
+        eventRepository.save(newEvent(user1, "1월 안에서 끝남", LocalDateTime.of(2026, 1, 31, 9, 0)));
+        eventRepository.save(Event.create(user1, "종료 없음(1월)", "설명",
+                LocalDateTime.of(2026, 1, 31, 23, 0), null,
+                false, "장소", "#FFFFFF", EventCategory.PERSONAL));
+        eventRepository.save(Event.create(user1, "종료 없음(2월)", "설명",
+                LocalDateTime.of(2026, 2, 3, 9, 0), null,
+                false, "장소", "#FFFFFF", EventCategory.PERSONAL));
+        eventRepository.save(newEvent(user1, "3월(범위밖)", LocalDateTime.of(2026, 3, 1, 9, 0)));
+        entityManager.flush();
+        entityManager.clear();
+
+        List<Event> events = eventRepository.findAllByUserIdAndDateRange(user1.getId(),
+                LocalDateTime.of(2026, 2, 1, 0, 0), LocalDateTime.of(2026, 2, 28, 23, 59, 59));
+
+        assertThat(events).extracting(Event::getTitle).containsExactly("걸친 일정", "종료 없음(2월)");
+    }
+
+    @Test
+    void findAllByUserIdAndDateRange_whenEventEndsExactlyAtFrom_includesBoundary() {
+        eventRepository.save(Event.create(user1, "경계", "설명",
+                LocalDateTime.of(2026, 1, 31, 23, 0), LocalDateTime.of(2026, 2, 1, 0, 0),
+                false, "장소", "#FFFFFF", EventCategory.PERSONAL));
+        entityManager.flush();
+        entityManager.clear();
+
+        List<Event> events = eventRepository.findAllByUserIdAndDateRange(user1.getId(),
+                LocalDateTime.of(2026, 2, 1, 0, 0), LocalDateTime.of(2026, 2, 28, 23, 59, 59));
+
+        assertThat(events).extracting(Event::getTitle).containsExactly("경계");
+    }
+
+    @Test
+    void findByUserIdAndDateRange_whenEventSpansIntoRange_countsOverlappingEvent() {
+        eventRepository.save(Event.create(user1, "걸친 일정", "설명",
+                LocalDateTime.of(2026, 1, 28, 9, 0), LocalDateTime.of(2026, 2, 2, 18, 0),
+                true, "장소", "#FFFFFF", EventCategory.PERSONAL));
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<Event> page = eventRepository.findByUserIdAndDateRange(user1.getId(),
+                LocalDateTime.of(2026, 2, 1, 0, 0), LocalDateTime.of(2026, 2, 28, 23, 59, 59), PageRequest.of(0, 10));
+
+        assertThat(page.getTotalElements()).isEqualTo(1);
+    }
+
+    @Test
     void findAllByUserIdAndDateRange_whenFromAndToNull_returnsAllForUser() {
         eventRepository.save(newEvent(user1, "1월5일", LocalDateTime.of(2026, 1, 5, 9, 0)));
         eventRepository.save(newEvent(user1, "3월1일", LocalDateTime.of(2026, 3, 1, 9, 0)));
