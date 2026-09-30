@@ -54,16 +54,13 @@ void main() {
     expect(find.text(sessionRevokedNotice), findsNothing);
   });
 
-  testWidgets('안내 SnackBar는 6초 뒤 자동으로 닫힌다', (tester) async {
+  testWidgets('안내 SnackBar는 확인을 누르기 전까지 자동으로 닫히지 않는다', (tester) async {
     await pumpApp(tester);
     notifier.emitNotice(sessionRevokedNotice);
     await tester.pumpAndSettle();
 
-    await tester.pump(const Duration(seconds: 5));
-    expect(find.text(sessionRevokedNotice), findsOneWidget);
-
-    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(minutes: 1));
     await tester.pumpAndSettle();
-    expect(find.text(sessionRevokedNotice), findsNothing);
+    expect(find.text(sessionRevokedNotice), findsOneWidget);
   });
 }

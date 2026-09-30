@@ -4,12 +4,26 @@ import { describe, expect, it, vi } from 'vitest'
 import SessionNoticeDialog from './SessionNoticeDialog'
 
 describe('SessionNoticeDialog', () => {
-  it('render_withMessage_showsFocusedAlertDialog', () => {
+  it('render_withMessage_showsAlertDialogWithConfirmFocused', () => {
     render(<SessionNoticeDialog message="보안 안내" onClose={() => {}} />)
 
     const dialog = screen.getByRole('alertdialog', { name: '로그아웃 안내' })
     expect(dialog).toHaveAccessibleDescription('보안 안내')
-    expect(dialog).toHaveFocus()
+    expect(screen.getByRole('button', { name: '확인' })).toHaveFocus()
+  })
+
+  it('onKeyDown_tabAndShiftTab_keepsFocusOnConfirm', async () => {
+    render(
+      <>
+        <button type="button">배경 버튼</button>
+        <SessionNoticeDialog message="보안 안내" onClose={() => {}} />
+      </>,
+    )
+
+    await userEvent.tab()
+    expect(screen.getByRole('button', { name: '확인' })).toHaveFocus()
+    await userEvent.tab({ shift: true })
+    expect(screen.getByRole('button', { name: '확인' })).toHaveFocus()
   })
 
   it('onClick_confirm_callsOnClose', async () => {

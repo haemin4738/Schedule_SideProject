@@ -19,9 +19,7 @@ class LifelogApp extends ConsumerWidget {
         ?..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(
           content: Text(notice),
-          duration: const Duration(seconds: 6),
-          // action 이 있으면 기본값이 persist=true(자동으로 닫히지 않음)라 6초 후 닫히도록 명시한다
-          persist: false,
+          // 보안 안내는 놓치면 안 되므로 자동으로 닫지 않는다 (action 이 있으면 persist 기본값 true — '확인'을 눌러야 닫힘)
           action: SnackBarAction(label: '확인', onPressed: () {}),
         ));
       // 한 번 보여준 안내는 비운다. provider 알림 도중 상태를 바꾸지 않도록 다음 마이크로태스크로 미룬다

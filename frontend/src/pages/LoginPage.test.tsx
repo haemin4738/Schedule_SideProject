@@ -225,10 +225,13 @@ describe('LoginPage', () => {
       renderLogin()
 
       expect(screen.getByRole('alertdialog')).toHaveTextContent('보안을 위해 모든 기기에서 로그아웃되었습니다.')
+      // 팝업이 떠 있는 동안 배경 폼은 inert
+      expect(screen.getByRole('form', { name: '이메일 로그인', hidden: true }).closest('[inert]')).not.toBeNull()
       await user.click(screen.getByRole('button', { name: '확인' }))
 
       expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
       expect(useAuthStore.getState().sessionNotice).toBeNull()
+      expect(screen.getByRole('form', { name: '이메일 로그인' }).closest('[inert]')).toBeNull()
     })
 
     it('LoginPage_noSessionNotice_showsNoDialog', () => {
