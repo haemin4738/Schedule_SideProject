@@ -327,14 +327,14 @@ paths:
       parameters:
         - name: from
           in: query
-          description: 조회 시작일 (ISO 8601, 포함)
+          description: 조회 시작 (ISO 8601 LocalDateTime, 포함). 이 시각 이후에 끝나는(종료 없으면 시작하는) 일정 — 기간에 걸친 여러 날 일정 포함
           schema:
             type: string
             format: date-time
             example: '2025-01-01T00:00:00'
         - name: to
           in: query
-          description: 조회 종료일 (ISO 8601, 포함)
+          description: 조회 끝 (ISO 8601 LocalDateTime, 포함). 이 시각 이전에 시작하는 일정
           schema:
             type: string
             format: date-time
