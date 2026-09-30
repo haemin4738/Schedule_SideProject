@@ -15,6 +15,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+
 @Service
 @RequiredArgsConstructor
 public class JobApplicationService {
@@ -31,8 +33,12 @@ public class JobApplicationService {
     }
 
     @Transactional(readOnly = true)
-    public Page<JobApplicationSummary> list(Long userId, JobApplicationStatus status, Pageable pageable) {
-        return jobApplicationRepository.findByUserIdAndStatus(userId, status, pageable)
+    public Page<JobApplicationSummary> list(Long userId, JobApplicationStatus status,
+                                            LocalDate from, LocalDate to, Pageable pageable) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw BusinessException.badRequest("조회 시작일은 종료일보다 늦을 수 없습니다.");
+        }
+        return jobApplicationRepository.findByUserIdAndFilter(userId, status, from, to, pageable)
                 .map(JobApplicationSummary::from);
     }
 

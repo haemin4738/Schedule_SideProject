@@ -27,6 +27,8 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -86,7 +88,7 @@ class JobApplicationControllerTest {
         JobApplicationSummary summary = new JobApplicationSummary(1L, "회사A", "백엔드 개발자",
                 JobApplicationStatus.APPLIED, LocalDate.of(2026, 1, 10));
         var page = new PageImpl<>(List.of(summary), PageRequest.of(0, 20), 1);
-        when(jobApplicationService.list(any(), any(), any())).thenReturn(page);
+        when(jobApplicationService.list(any(), any(), any(), any(), any())).thenReturn(page);
 
         mockMvc.perform(get("/api/v1/job-applications").with(asUser()))
                 .andExpect(status().isOk())
@@ -102,7 +104,7 @@ class JobApplicationControllerTest {
     @Test
     void list_whenStatusFilterGiven_passesStatusToService() throws Exception {
         var page = new PageImpl<JobApplicationSummary>(List.of(), PageRequest.of(0, 20), 0);
-        when(jobApplicationService.list(eq(USER_ID), eq(JobApplicationStatus.APPLIED), any())).thenReturn(page);
+        when(jobApplicationService.list(eq(USER_ID), eq(JobApplicationStatus.APPLIED), isNull(), isNull(), any())).thenReturn(page);
 
         mockMvc.perform(get("/api/v1/job-applications").param("status", "APPLIED").with(asUser()))
                 .andExpect(status().isOk())
@@ -285,5 +287,37 @@ class JobApplicationControllerTest {
         mockMvc.perform(delete("/api/v1/job-applications/{id}", 1L).with(asUser()))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void list_whenFromToGiven_passesParsedDatesAndUnsortedPageToService() throws Exception {
+        var page = new PageImpl<JobApplicationSummary>(List.of(), PageRequest.of(0, 20), 0);
+        when(jobApplicationService.list(any(), any(), any(), any(), any())).thenReturn(page);
+
+        mockMvc.perform(get("/api/v1/job-applications").with(asUser())
+                        .param("status", "OFFER").param("from", "2026-09-01").param("to", "2026-09-30")
+                        .param("page", "1").param("size", "5"))
+                .andExpect(status().isOk());
+
+        verify(jobApplicationService).list(USER_ID, JobApplicationStatus.OFFER,
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), PageRequest.of(1, 5));
+    }
+
+    @Test
+    void list_whenDateFormatInvalid_returnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/v1/job-applications").param("from", "2026/09/01").with(asUser()))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void list_whenFromAfterTo_returnsBadRequestFromService() throws Exception {
+        when(jobApplicationService.list(any(), any(), any(), any(), any()))
+                .thenThrow(BusinessException.badRequest("조회 시작일은 종료일보다 늦을 수 없습니다."));
+
+        mockMvc.perform(get("/api/v1/job-applications").with(asUser())
+                        .param("from", "2026-10-01").param("to", "2026-09-30"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("조회 시작일은 종료일보다 늦을 수 없습니다."));
     }
 }
