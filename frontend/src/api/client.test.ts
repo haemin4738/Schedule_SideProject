@@ -1,6 +1,6 @@
 import axios, { AxiosError, type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import client, { isTokenExpired } from './client'
+import client, { isAuthPath, isTokenExpired } from './client'
 import { useAuthStore } from '@/store/authStore'
 
 const unauthorized = (config: InternalAxiosRequestConfig) =>
@@ -82,6 +82,21 @@ describe('api client 401 처리', () => {
     expect(refresh).not.toHaveBeenCalled()
   })
 
+  it('소셜 로그인·계정 연결 요청의 401도 refresh를 시도하지 않는다', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    const refresh = vi.spyOn(axios, 'post')
+
+    await expect(client.post('/api/v1/auth/social/kakao/login', {})).rejects.toMatchObject({
+      response: { status: 401 },
+    })
+    await expect(client.post('/api/v1/auth/social/link', {})).rejects.toMatchObject({
+      response: { status: 401 },
+    })
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
   it('refresh도 실패하면 로그아웃 처리하고 원래 에러를 반환한다', async () => {
     adapter.mockImplementation(async (config) => {
       throw unauthorized(config)
@@ -141,6 +156,33 @@ describe('api client 401 처리', () => {
 
     await expect(client.get('/api/v1/events/1')).rejects.toMatchObject({ response: { status: 403 } })
     expect(refresh).not.toHaveBeenCalled()
+  })
+})
+
+describe('isAuthPath', () => {
+  it('/api/v1/auth/ 로 시작하는 경로는 인증 경로로 본다', () => {
+    expect(isAuthPath('/api/v1/auth/login')).toBe(true)
+    expect(isAuthPath('/api/v1/auth/refresh')).toBe(true)
+    expect(isAuthPath('/api/v1/auth/social/google/login')).toBe(true)
+    expect(isAuthPath('/api/v1/auth/social/link?x=1')).toBe(true)
+  })
+
+  it('쿼리스트링에만 인증 경로가 있거나 prefix가 다르면 인증 경로가 아니다', () => {
+    expect(isAuthPath('/api/v1/events?redirect=/api/v1/auth/login')).toBe(false)
+    expect(isAuthPath('/api/v1/authors')).toBe(false)
+    expect(isAuthPath(undefined)).toBe(false)
+  })
+
+  it('isAuthPath_similarPrefixWithoutSlash_returnsFalse', () => {
+    expect(isAuthPath('/api/v1/authx')).toBe(false)
+    expect(isAuthPath('/api/v1/authx/login')).toBe(false)
+    expect(isAuthPath('/api/v1/auth')).toBe(false)
+    expect(isAuthPath('')).toBe(false)
+  })
+
+  it('isAuthPath_queryStringOnAuthPath_ignoresQuery', () => {
+    expect(isAuthPath('/api/v1/auth/social/kakao/login?foo=bar&baz=/api/v1/events')).toBe(true)
+    expect(isAuthPath('/api/v1/authx?next=/api/v1/auth/login')).toBe(false)
   })
 })
 

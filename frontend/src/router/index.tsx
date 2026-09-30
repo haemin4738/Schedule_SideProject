@@ -4,6 +4,7 @@ import CalendarPage from '@/pages/CalendarPage'
 import ExpensesPage from '@/pages/ExpensesPage'
 import JobApplicationsPage from '@/pages/JobApplicationsPage'
 import LoginPage from '@/pages/LoginPage'
+import OAuthCallbackPage from '@/pages/OAuthCallbackPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const accessToken = useAuthStore((s) => s.accessToken)
@@ -15,6 +16,7 @@ export default function AppRouter() {
     <Router>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/oauth/callback/:provider" element={<OAuthCallbackPage />} />
         <Route
           path="/"
           element={
