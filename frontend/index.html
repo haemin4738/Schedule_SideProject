@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- OAuth 콜백 URL 의 code/state 가 교차 출처 Referer 로 새지 않도록 origin 만 보낸다 (RFC 9700 4.2.4) -->
+    <meta name="referrer" content="strict-origin" />
     <title>frontend</title>
   </head>
   <body>

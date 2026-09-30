@@ -13,3 +13,43 @@ export const signup = (email: string, password: string, name: string) =>
   )
 
 export const logout = () => client.post('/api/v1/auth/logout')
+
+export type SocialProvider = 'kakao' | 'naver' | 'google'
+
+export interface TokenResponse {
+  accessToken: string
+  refreshToken: string
+  tokenType: string
+}
+
+export interface SocialLinkInfo {
+  linkToken: string
+  provider: 'KAKAO' | 'NAVER' | 'GOOGLE'
+  maskedEmail: string
+  expiresInSeconds: number
+}
+
+export type SocialLoginResponse =
+  | { status: 'LOGGED_IN'; newUser: boolean; token: TokenResponse; link: null }
+  | { status: 'LINK_REQUIRED'; newUser: boolean; token: null; link: SocialLinkInfo }
+
+export interface SocialLoginRequest {
+  grantType: 'AUTHORIZATION_CODE'
+  code: string
+  redirectUri: string
+  codeVerifier?: string
+  nonce?: string
+  state?: string
+}
+
+export const socialLogin = (provider: SocialProvider, body: SocialLoginRequest) =>
+  client.post<{ success: boolean; data: SocialLoginResponse }>(
+    `/api/v1/auth/social/${provider}/login`,
+    body,
+  )
+
+export const socialLink = (linkToken: string, password: string) =>
+  client.post<{ success: boolean; data: TokenResponse }>('/api/v1/auth/social/link', {
+    linkToken,
+    password,
+  })

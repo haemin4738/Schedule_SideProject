@@ -16,8 +16,13 @@ client.interceptors.request.use((config) => {
   return config
 })
 
-// 이 경로들의 401(잘못된 비밀번호, 만료된 refresh 토큰 등)은 재발급 대상이 아니다
-const AUTH_PATHS = new Set(['/api/v1/auth/login', '/api/v1/auth/signup', '/api/v1/auth/refresh', '/api/v1/auth/logout'])
+// 인증 API(/api/v1/auth/**)의 401(잘못된 비밀번호, 만료된 refresh·link 토큰, 제공자 자격증명 오류 등)은 재발급 대상이 아니다
+// 주의: /api/v1/auth/ 아래에 로그인이 필요한 API(연동 해제 등)를 추가하면 그 401 도 재발급되지 않는다 — 다른 경로에 둘 것
+const AUTH_PATH_PREFIX = '/api/v1/auth/'
+
+/** 쿼리스트링을 뗀 경로가 인증 API 인지 판단한다. */
+export const isAuthPath = (url: string | undefined): boolean =>
+  (url ?? '').split('?')[0].startsWith(AUTH_PATH_PREFIX)
 
 // 동시에 여러 요청이 401을 받아도 refresh는 한 번만 호출한다
 let refreshing: Promise<string> | null = null
@@ -64,7 +69,7 @@ client.interceptors.response.use(
   (res) => res,
   async (error: AxiosError) => {
     const original = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined
-    const isAuthRequest = AUTH_PATHS.has((original?.url ?? '').split('?')[0])
+    const isAuthRequest = isAuthPath(original?.url)
     if (error.response?.status !== 401 || !original || original._retry || isAuthRequest) {
       return Promise.reject(error)
     }
