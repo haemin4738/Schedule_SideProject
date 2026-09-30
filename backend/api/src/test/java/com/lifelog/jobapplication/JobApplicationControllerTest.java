@@ -124,6 +124,12 @@ class JobApplicationControllerTest {
     }
 
     @Test
+    void list_whenSizeIsZero_returnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/v1/job-applications").param("size", "0").with(asUser()))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void list_whenPageIsNegative_returnsBadRequest() throws Exception {
         mockMvc.perform(get("/api/v1/job-applications").param("page", "-1").with(asUser()))
                 .andExpect(status().isBadRequest());

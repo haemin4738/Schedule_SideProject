@@ -34,7 +34,7 @@ public class JobApplicationController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Max(100) int size) {
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         // 정렬(appliedAt DESC, id DESC)은 레포지토리 쿼리에 고정되어 있으므로 Sort를 넘기지 않는다.
         return PagedResponse.ok(jobApplicationService.list(userId, status, from, to,
                 PageRequest.of(page, size)));
