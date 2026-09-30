@@ -6,8 +6,16 @@ export const login = (email: string, password: string) =>
     { email, password },
   )
 
+export interface SignupResponse {
+  id: number
+  email: string
+  name: string
+  createdAt: string
+}
+
+/** 가입만 하고 토큰은 주지 않는다 — 가입 후 login 을 따로 호출해야 한다 */
 export const signup = (email: string, password: string, name: string) =>
-  client.post<{ success: boolean; data: { accessToken: string; refreshToken: string } }>(
+  client.post<{ success: boolean; data: SignupResponse }>(
     '/api/v1/auth/signup',
     { email, password, name },
   )

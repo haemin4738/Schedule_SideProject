@@ -9,7 +9,7 @@ import {
 import { useAuthStore } from '@/store/authStore'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 interface FormValues {
   email: string
@@ -19,6 +19,8 @@ interface FormValues {
 /** 콜백 페이지가 navigate('/login', { state: { socialError } }) 로 넘기는 안내 메시지 */
 export interface LoginLocationState {
   socialError?: string
+  /** 회원가입 직후 자동 로그인에 실패했을 때 등 오류가 아닌 안내 */
+  notice?: string
 }
 
 // 제공자 브랜드 색 (카카오 노랑, 네이버 초록, 구글 흰 바탕 + 테두리)
@@ -37,14 +39,15 @@ export default function LoginPage() {
   const loginStore = useAuthStore((s) => s.login)
   const navigate = useNavigate()
   const location = useLocation()
-  const socialError = (location.state as LoginLocationState | null)?.socialError
+  const { socialError, notice } = (location.state as LoginLocationState | null) ?? {}
   const [error, setError] = useState<string | null>(socialError ?? null)
+  const [info, setInfo] = useState<string | null>(notice ?? null)
   const [redirecting, setRedirecting] = useState<SocialProvider | null>(null)
 
   // 콜백에서 넘어온 메시지는 한 번만 보여 준다 (새로고침 시 history state 로 다시 뜨지 않게 비운다)
   useEffect(() => {
-    if (socialError) navigate(location.pathname, { replace: true, state: null })
-  }, [socialError, location.pathname, navigate])
+    if (socialError || notice) navigate(location.pathname, { replace: true, state: null })
+  }, [socialError, notice, location.pathname, navigate])
 
   // 제공자 화면에서 뒤로 가기로 bfcache 복원되면 '이동 중' 상태를 풀어 준다
   useEffect(() => {
@@ -57,6 +60,7 @@ export default function LoginPage() {
 
   const onSubmit = async ({ email, password }: FormValues) => {
     setError(null)
+    setInfo(null)
     try {
       const { data } = await login(email, password)
       loginStore(data.data.accessToken, data.data.refreshToken)
@@ -68,6 +72,7 @@ export default function LoginPage() {
 
   const onSocialLogin = async (provider: SocialProvider) => {
     setError(null)
+    setInfo(null)
     setRedirecting(provider)
     try {
       window.location.assign(await buildAuthorizeUrl(provider))
@@ -81,6 +86,12 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
       <div className="w-full max-w-sm rounded-xl bg-white p-8 shadow">
         <h1 className="mb-6 text-2xl font-semibold">로그인</h1>
+
+        {info && (
+          <p role="status" className="mb-4 rounded bg-green-50 px-3 py-2 text-sm text-green-700">
+            {info}
+          </p>
+        )}
 
         {error && (
           <p role="alert" className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -147,6 +158,13 @@ export default function LoginPage() {
             )
           })}
         </div>
+
+        <p className="mt-6 text-center text-sm text-gray-500">
+          계정이 없나요?{' '}
+          <Link to="/signup" className="text-blue-500 hover:underline">
+            회원가입
+          </Link>
+        </p>
       </div>
     </div>
   )
