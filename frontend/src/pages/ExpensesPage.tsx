@@ -21,6 +21,7 @@ import ExpenseSummaryCards from '@/components/expenses/ExpenseSummaryCards'
 import { EXPENSE_TYPE_LABELS, EXPENSE_TYPE_OPTIONS, type ExpenseType } from '@/constants/expenseType'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import LogoutButton from '@/components/LogoutButton'
 import { Link } from 'react-router-dom'
 
 const PAGE_SIZE = 20
@@ -241,9 +242,12 @@ export default function ExpensesPage() {
     <div className="mx-auto max-w-4xl p-4">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">가계부</h1>
-        <Link to="/" className="text-sm text-blue-500 hover:underline">
-          캘린더로 이동
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link to="/" className="text-sm text-blue-500 hover:underline">
+            캘린더로 이동
+          </Link>
+          <LogoutButton />
+        </div>
       </div>
 
       <div className="mb-4 flex items-center justify-center gap-4">

@@ -38,7 +38,7 @@ describe('LoginPage', () => {
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
-    useAuthStore.setState({ accessToken: null })
+    useAuthStore.setState({ accessToken: null, sessionNotice: null })
     vi.stubEnv('VITE_KAKAO_CLIENT_ID', 'kakao-client')
     vi.stubEnv('VITE_NAVER_CLIENT_ID', 'naver-client')
     vi.stubEnv('VITE_GOOGLE_CLIENT_ID', 'google-client')
@@ -54,7 +54,7 @@ describe('LoginPage', () => {
     vi.resetAllMocks()
     localStorage.clear()
     sessionStorage.clear()
-    useAuthStore.setState({ accessToken: null })
+    useAuthStore.setState({ accessToken: null, sessionNotice: null })
   })
 
   describe('이메일 로그인', () => {
@@ -215,6 +215,25 @@ describe('LoginPage', () => {
       await user.click(screen.getByRole('button', { name: '로그인' }))
       await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
       expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('보안 로그아웃 팝업', () => {
+    it('LoginPage_sessionNoticeInStore_showsAlertDialogUntilConfirmed', async () => {
+      const user = userEvent.setup()
+      useAuthStore.setState({ sessionNotice: '보안을 위해 모든 기기에서 로그아웃되었습니다.' })
+      renderLogin()
+
+      expect(screen.getByRole('alertdialog')).toHaveTextContent('보안을 위해 모든 기기에서 로그아웃되었습니다.')
+      await user.click(screen.getByRole('button', { name: '확인' }))
+
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+      expect(useAuthStore.getState().sessionNotice).toBeNull()
+    })
+
+    it('LoginPage_noSessionNotice_showsNoDialog', () => {
+      renderLogin()
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
     })
   })
 

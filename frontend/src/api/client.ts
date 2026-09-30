@@ -1,4 +1,5 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios'
+import { getApiErrorCode, getApiErrorMessage } from '@/api/errorMessage'
 import { useAuthStore } from '@/store/authStore'
 
 // 기본은 같은 출처 상대경로(/api/...) — 개발 시 Vite 프록시가 백엔드로 전달한다.
@@ -23,6 +24,9 @@ const AUTH_PATH_PREFIX = '/api/v1/auth/'
 /** 쿼리스트링을 뗀 경로가 인증 API 인지 판단한다. */
 export const isAuthPath = (url: string | undefined): boolean =>
   (url ?? '').split('?')[0].startsWith(AUTH_PATH_PREFIX)
+
+const SESSION_REVOKED_CODE = 'SESSION_REVOKED'
+export const SESSION_REVOKED_NOTICE = '보안을 위해 모든 기기에서 로그아웃되었습니다. 다시 로그인해 주세요.'
 
 // 동시에 여러 요청이 401을 받아도 refresh는 한 번만 호출한다
 let refreshing: Promise<string> | null = null
@@ -49,6 +53,8 @@ export const isTokenExpired = (token: string, nowMs: number = Date.now()): boole
 /**
  * access 토큰을 재발급한다. 진행 중인 refresh가 있으면 그 결과를 공유한다.
  * refresh 토큰이 없거나 만료/무효(401/403)면 로그아웃한다. 네트워크 오류·5xx 같은 일시 장애로는 로그아웃하지 않는다.
+ * 409(REFRESH_IN_PROGRESS: 다른 탭이 먼저 갱신함)도 일시 실패로 보고 로그아웃하지 않는다 — 다음 요청은 그 탭이 저장한 새 토큰을 쓴다.
+ * 401 + code SESSION_REVOKED(토큰 재사용 탐지로 모든 기기 로그아웃)면 로그인 화면 팝업 안내와 함께 로그아웃한다.
  */
 export const refreshSession = async (): Promise<string> => {
   refreshing ??= refreshAccessToken().finally(() => {
@@ -58,7 +64,9 @@ export const refreshSession = async (): Promise<string> => {
     return await refreshing
   } catch (refreshError) {
     const status = axios.isAxiosError(refreshError) ? refreshError.response?.status : undefined
-    if (!axios.isAxiosError(refreshError) || status === 401 || status === 403) {
+    if (status === 401 && getApiErrorCode(refreshError) === SESSION_REVOKED_CODE) {
+      useAuthStore.getState().logout(getApiErrorMessage(refreshError, SESSION_REVOKED_NOTICE))
+    } else if (!axios.isAxiosError(refreshError) || status === 401 || status === 403) {
       useAuthStore.getState().logout()
     }
     throw refreshError

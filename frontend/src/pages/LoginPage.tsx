@@ -6,6 +6,7 @@ import {
   getProviderLabel,
   isProviderConfigured,
 } from '@/auth/social'
+import SessionNoticeDialog from '@/components/SessionNoticeDialog'
 import { useAuthStore } from '@/store/authStore'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -37,6 +38,8 @@ export default function LoginPage() {
     formState: { isSubmitting },
   } = useForm<FormValues>()
   const loginStore = useAuthStore((s) => s.login)
+  const sessionNotice = useAuthStore((s) => s.sessionNotice)
+  const clearSessionNotice = useAuthStore((s) => s.clearSessionNotice)
   const navigate = useNavigate()
   const location = useLocation()
   const { socialError, notice } = (location.state as LoginLocationState | null) ?? {}
@@ -166,6 +169,8 @@ export default function LoginPage() {
           </Link>
         </p>
       </div>
+
+      {sessionNotice && <SessionNoticeDialog message={sessionNotice} onClose={clearSessionNotice} />}
     </div>
   )
 }

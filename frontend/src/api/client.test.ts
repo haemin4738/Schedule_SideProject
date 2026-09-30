@@ -1,6 +1,6 @@
 import axios, { AxiosError, type AxiosAdapter, type InternalAxiosRequestConfig } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import client, { isAuthPath, isTokenExpired } from './client'
+import client, { SESSION_REVOKED_NOTICE, isAuthPath, isTokenExpired } from './client'
 import { useAuthStore } from '@/store/authStore'
 
 const unauthorized = (config: InternalAxiosRequestConfig) =>
@@ -34,6 +34,7 @@ describe('api client 401 처리', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     localStorage.clear()
+    useAuthStore.setState({ sessionNotice: null })
   })
 
   it('401이면 refresh 후 새 토큰으로 원 요청을 재시도하고 두 토큰을 모두 저장한다', async () => {
@@ -125,6 +126,75 @@ describe('api client 401 처리', () => {
 
     await expect(client.get('/api/v1/events')).rejects.toMatchObject({ response: { status: 401 } })
     expect(localStorage.getItem('refreshToken')).toBe('valid-refresh')
+    expect(useAuthStore.getState().accessToken).toBe('expired-access')
+  })
+
+  const refreshRejected = (status: number, data: unknown) =>
+    new AxiosError('Refresh failed', 'ERR_BAD_REQUEST', undefined, null, {
+      status,
+      statusText: String(status),
+      data,
+      headers: {},
+      config: {} as InternalAxiosRequestConfig,
+    })
+
+  it('refreshSession_refresh401WithSessionRevokedCode_logsOutWithNotice', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockRejectedValue(
+      refreshRejected(401, { success: false, data: null, error: '보안 안내 문구', code: 'SESSION_REVOKED' }),
+    )
+
+    await expect(client.get('/api/v1/events')).rejects.toMatchObject({ response: { status: 401 } })
+    expect(useAuthStore.getState().accessToken).toBeNull()
+    expect(localStorage.getItem('refreshToken')).toBeNull()
+    expect(useAuthStore.getState().sessionNotice).toBe('보안 안내 문구')
+  })
+
+  it('refreshSession_sessionRevokedWithoutMessage_usesFallbackNotice', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockRejectedValue(refreshRejected(401, { success: false, data: null, code: 'SESSION_REVOKED' }))
+
+    await expect(client.get('/api/v1/events')).rejects.toBeDefined()
+    expect(useAuthStore.getState().sessionNotice).toBe(SESSION_REVOKED_NOTICE)
+  })
+
+  it('refreshSession_refresh401WithInvalidTokenCode_logsOutWithoutNotice', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockRejectedValue(
+      refreshRejected(401, { success: false, data: null, error: '유효하지 않은 refresh 토큰입니다.', code: 'INVALID_REFRESH_TOKEN' }),
+    )
+
+    await expect(client.get('/api/v1/events')).rejects.toBeDefined()
+    expect(useAuthStore.getState().accessToken).toBeNull()
+    expect(useAuthStore.getState().sessionNotice).toBeNull()
+  })
+
+  it('refreshSession_refresh409RefreshInProgress_doesNotLogout', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockRejectedValue(
+      refreshRejected(409, { success: false, data: null, error: '갱신 중', code: 'REFRESH_IN_PROGRESS' }),
+    )
+
+    await expect(client.get('/api/v1/events')).rejects.toMatchObject({ response: { status: 401 } })
+    expect(useAuthStore.getState().accessToken).toBe('expired-access')
+    expect(localStorage.getItem('refreshToken')).toBe('valid-refresh')
+  })
+
+  it('refreshSession_refresh503_doesNotLogout', async () => {
+    adapter.mockImplementation(async (config) => {
+      throw unauthorized(config)
+    })
+    vi.spyOn(axios, 'post').mockRejectedValue(refreshRejected(503, { success: false, data: null, error: '일시 장애' }))
+
+    await expect(client.get('/api/v1/events')).rejects.toBeDefined()
     expect(useAuthStore.getState().accessToken).toBe('expired-access')
   })
 

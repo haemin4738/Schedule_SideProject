@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import { useCallback, useEffect, useState } from 'react'
 import { Calendar, dayjsLocalizer } from 'react-big-calendar'
 import { Link } from 'react-router-dom'
+import LogoutButton from '@/components/LogoutButton'
 
 const localizer = dayjsLocalizer(dayjs)
 
@@ -55,6 +56,7 @@ export default function CalendarPage() {
         <Link to="/expenses" className="text-sm text-blue-500 hover:underline">
           가계부
         </Link>
+        <LogoutButton />
       </div>
       <div className="flex-1">
         <Calendar localizer={localizer} events={events} style={{ height: '100%' }} />

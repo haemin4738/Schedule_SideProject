@@ -13,6 +13,7 @@ import {
   JOB_APPLICATION_STATUS_LABELS,
   type JobApplicationStatus,
 } from '@/constants/jobApplicationStatus'
+import LogoutButton from '@/components/LogoutButton'
 import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -141,9 +142,12 @@ export default function JobApplicationsPage() {
     <div className="mx-auto max-w-4xl p-4">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">구직활동 관리</h1>
-        <Link to="/" className="text-sm text-blue-500 hover:underline">
-          캘린더로 이동
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link to="/" className="text-sm text-blue-500 hover:underline">
+            캘린더로 이동
+          </Link>
+          <LogoutButton />
+        </div>
       </div>
 
       <form
