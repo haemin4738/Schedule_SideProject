@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/core/network/dio_client.dart';
+import 'package:mobile/core/network/sse_client.dart';
 import 'package:mobile/features/calendar/event_category.dart';
 import 'package:mobile/features/jobapplications/provider/job_applications_provider.dart';
 
@@ -204,11 +207,30 @@ const _pageSize = 100;
 const _maxPages = 20;
 
 class EventsNotifier extends StateNotifier<AsyncValue<CalendarMonthState>> {
-  EventsNotifier({DateTime? initialMonth, Dio? dio})
+  /// [changes] 를 주면 그 이벤트(SSE)로 실시간 갱신한다 — provider 는 서버 SSE 를, 테스트는 가짜 스트림을 넘긴다
+  EventsNotifier({DateTime? initialMonth, Dio? dio, Stream<SseEvent> Function(Dio dio)? changes})
       : _dio = dio ?? createDio(),
         month = DateTime((initialMonth ?? DateTime.now()).year, (initialMonth ?? DateTime.now()).month),
         super(const AsyncValue.loading()) {
     refresh();
+    var first = true;
+    _changes = changes?.call(_dio).listen((event) {
+      // 일정이 바뀌면(REFRESH) 다시 불러오고, 다시 연결되면 끊겨 있던 동안의 변경을 따라잡는다.
+      // 첫 연결은 생성자에서 이미 불러왔으므로 건너뛴다
+      if (event.name == sseOpenEvent && first) {
+        first = false;
+        return;
+      }
+      if (event.name == 'REFRESH' || event.name == sseOpenEvent) refresh();
+    });
+  }
+
+  StreamSubscription<SseEvent>? _changes;
+
+  @override
+  void dispose() {
+    _changes?.cancel();
+    super.dispose();
   }
 
   final Dio _dio;
@@ -380,5 +402,5 @@ class EventsNotifier extends StateNotifier<AsyncValue<CalendarMonthState>> {
 /// 캘린더 화면이 구독하는 동안에는 같은 인스턴스가 유지된다.
 final eventsProvider = StateNotifierProvider.autoDispose<EventsNotifier,
     AsyncValue<CalendarMonthState>>(
-  (_) => EventsNotifier(),
+  (_) => EventsNotifier(changes: (dio) => sseEvents(dio, '/api/v1/sse/events')),
 );

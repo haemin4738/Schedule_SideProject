@@ -161,13 +161,21 @@ export default function CalendarPage() {
 
   // 토큰이 재발급되면 새 토큰으로 SSE를 다시 연결한다 (만료 토큰으로 재연결 반복 방지)
   const accessToken = useAuthStore((state) => state.accessToken)
+  const sawFirstOpen = useRef(false)
 
   useEffect(() => {
     if (!accessToken) return
     const es = new EventSource(`/api/v1/sse/events?token=${accessToken}`)
     const reload = () => loadRef.current()
-    // 재연결(토큰 재발급 등) 시 끊겨 있던 동안의 변경을 반영한다
-    es.addEventListener('open', reload)
+    // 재연결(토큰 재발급 등) 시 끊겨 있던 동안의 변경을 반영한다.
+    // 서버가 연결 즉시 CONNECTED 를 보내 open 이 바로 오므로, 화면을 처음 열 때의 open 은 이미 불러온 직후라 건너뛴다
+    es.addEventListener('open', () => {
+      if (!sawFirstOpen.current) {
+        sawFirstOpen.current = true
+        return
+      }
+      reload()
+    })
     es.addEventListener('REFRESH', reload)
     // 만료된 토큰으로 재연결하면 401을 받고 EventSource가 재시도를 멈춘다 → 토큰을 재발급해 새 토큰으로 다시 연결한다
     // SSE 서버 오류로 끊긴 경우엔 재발급하지 않는다 (재발급 → 재연결 → 실패 무한 반복 방지)

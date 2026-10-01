@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -49,9 +49,19 @@ const JOB_TITLE = '라이프로그 · 백엔드 (지원완료)'
 
 class FakeEventSource {
   static CLOSED = 2
+  static last: FakeEventSource | null = null
   readyState = 1
   onerror: (() => void) | null = null
-  addEventListener() {}
+  listeners = new Map<string, Array<() => void>>()
+  constructor() {
+    FakeEventSource.last = this
+  }
+  addEventListener(type: string, listener: () => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
+  }
+  emit(type: string) {
+    this.listeners.get(type)?.forEach((l) => l())
+  }
   close() {}
 }
 
@@ -269,6 +279,23 @@ describe('CalendarPage', () => {
       expect(screen.getByRole('status')).toHaveTextContent('일정이 너무 많아 앞의 2,000개만 표시합니다.'),
     )
     expect(screen.getByText('팀 회의')).toBeInTheDocument()
+  })
+
+  it('sse_firstOpenSkipped_laterOpenAndRefreshReload', async () => {
+    renderPage()
+    await waitFor(() => expect(mockedRange).toHaveBeenCalledTimes(1))
+    const es = FakeEventSource.last!
+
+    // 서버가 연결 즉시 CONNECTED 를 보내 open 이 바로 온다 — 방금 불러왔으므로 다시 부르지 않는다
+    act(() => es.emit('open'))
+    expect(mockedRange).toHaveBeenCalledTimes(1)
+
+    act(() => es.emit('REFRESH'))
+    await waitFor(() => expect(mockedRange).toHaveBeenCalledTimes(2))
+
+    // 끊겼다 다시 연결되면 그동안의 변경을 따라잡는다
+    act(() => es.emit('open'))
+    await waitFor(() => expect(mockedRange).toHaveBeenCalledTimes(3))
   })
 
   it('load_fails_showsError', async () => {

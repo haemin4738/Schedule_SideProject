@@ -26,4 +26,10 @@ class SseServiceTest {
     void publish_whenNoSubscriber_doesNothing() {
         assertThatCode(() -> sseService.publish(99L)).doesNotThrowAnyException();
     }
+
+    @Test
+    void subscribe_whenCalled_returnsEmitterAndDoesNotThrow() {
+        // 연결 직후 CONNECTED 이벤트를 보낸다 — 핸들러가 붙기 전이라 emitter 가 버퍼링한다
+        assertThatCode(() -> sseService.subscribe(2L)).doesNotThrowAnyException();
+    }
 }
