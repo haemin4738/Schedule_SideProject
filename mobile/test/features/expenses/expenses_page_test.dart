@@ -47,13 +47,13 @@ class _Harness {
         summary = FakeExpenseSummaryNotifier(summaryState),
         categories = FakeExpenseCategoriesNotifier(categoriesState);
 
-  Widget build() => ProviderScope(
+  Widget build({DateTime? initialMonth}) => ProviderScope(
         overrides: [
           expensesProvider.overrideWith((ref) => expenses),
           expenseSummaryProvider.overrideWith((ref) => summary),
           expenseCategoriesProvider.overrideWith((ref) => categories),
         ],
-        child: const MaterialApp(home: ExpensesPage()),
+        child: MaterialApp(home: ExpensesPage(initialMonth: initialMonth)),
       );
 }
 
@@ -377,6 +377,37 @@ void main() {
       expect(find.text('상세 조회로만 오는 메모'), findsOneWidget);
       expect(find.text('12000'), findsOneWidget);
       expect(find.text('2026-09-28'), findsOneWidget);
+    });
+  });
+
+  group('캘린더에서 달 지정 진입', () {
+    testWidgets('initialMonth_다른달_목록과요약을그달로옮긴다', (tester) async {
+      final harness = _Harness();
+      useTallScreen(tester);
+      final current = harness.expenses.month;
+      final target = DateTime(current.year, current.month - 2);
+      await tester.pumpWidget(harness.build(initialMonth: target));
+      await tester.pump();
+
+      expect(harness.expenses.monthChanges, [target]);
+      expect(harness.summary.fetches, [target]);
+    });
+
+    testWidgets('initialMonth_이번달_다시조회하지않는다', (tester) async {
+      final harness = _Harness();
+      useTallScreen(tester);
+      await tester.pumpWidget(harness.build(initialMonth: harness.expenses.month));
+      await tester.pump();
+
+      expect(harness.expenses.monthChanges, isEmpty);
+      expect(harness.summary.fetches, isEmpty);
+    });
+
+    test('parseMonth_형식이맞으면그달1일_틀리면null', () {
+      expect(ExpensesPage.parseMonth('2026-10'), DateTime(2026, 10));
+      for (final bad in [null, '', '2026-13', '2026-1', '2026-10-01', 'abc']) {
+        expect(ExpensesPage.parseMonth(bad), isNull, reason: '$bad');
+      }
     });
   });
 }

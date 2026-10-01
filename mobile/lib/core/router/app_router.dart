@@ -27,7 +27,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/expenses',
-        builder: (_, _) => const ExpensesPage(),
+        builder: (_, state) =>
+            ExpensesPage(initialMonth: ExpensesPage.parseMonth(state.uri.queryParameters['month'])),
       ),
     ],
   );

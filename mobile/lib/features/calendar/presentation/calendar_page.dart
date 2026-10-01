@@ -7,8 +7,13 @@ import 'package:intl/intl.dart';
 import 'package:mobile/features/auth/provider/auth_provider.dart';
 import 'package:mobile/features/calendar/presentation/event_form_sheet.dart';
 import 'package:mobile/features/calendar/provider/events_provider.dart';
+import 'package:mobile/features/expenses/expense_type.dart';
+import 'package:mobile/features/jobapplications/job_application_status.dart';
 
 const _weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+
+/// 구직활동 표시 색 (웹 JOB_APPLICATION_COLOR 와 같은 보라)
+const jobApplicationColor = Color(0xFF8E24AA);
 final _timeFormat = DateFormat('HH:mm');
 
 bool _sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
@@ -93,6 +98,12 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     );
   }
 
+  /// 다른 화면에서 고친 내용(가계부·구직활동)이 30초 주기를 기다리지 않고 보이도록 돌아오면 다시 불러온다
+  Future<void> _openScreen(String location) async {
+    await context.push(location);
+    if (mounted) ref.read(eventsProvider.notifier).refresh();
+  }
+
   void _goToToday() {
     ref.read(eventsProvider.notifier).goToToday();
     setState(() => _selected = DateTime.now());
@@ -115,12 +126,12 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
           IconButton(
             icon: const Icon(Icons.work_outline),
             tooltip: '구직활동',
-            onPressed: () => context.push('/job-applications'),
+            onPressed: () => _openScreen('/job-applications'),
           ),
           IconButton(
             icon: const Icon(Icons.account_balance_wallet_outlined),
             tooltip: '가계부',
-            onPressed: () => context.push('/expenses'),
+            onPressed: () => _openScreen('/expenses'),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -164,6 +175,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                 selected: _selected,
                 onSelect: (day) => setState(() => _selected = day),
                 onOpenEvent: (item) => _openForm(item: item),
+                onOpenScreen: _openScreen,
               ),
             ),
           ),
@@ -241,6 +253,7 @@ class _MonthBody extends StatelessWidget {
     required this.selected,
     required this.onSelect,
     required this.onOpenEvent,
+    required this.onOpenScreen,
   });
 
   final DateTime month;
@@ -248,6 +261,7 @@ class _MonthBody extends StatelessWidget {
   final DateTime selected;
   final ValueChanged<DateTime> onSelect;
   final ValueChanged<EventItem> onOpenEvent;
+  final ValueChanged<String> onOpenScreen;
 
   @override
   Widget build(BuildContext context) {
@@ -293,7 +307,9 @@ class _MonthBody extends StatelessWidget {
               ),
             ),
             const Divider(height: 1),
-            Expanded(child: _DayDetail(day: selected, data: data, onOpenEvent: onOpenEvent)),
+            Expanded(
+              child: _DayDetail(day: selected, data: data, onOpenEvent: onOpenEvent, onOpenScreen: onOpenScreen),
+            ),
           ],
         );
       },
@@ -319,6 +335,7 @@ class _DayCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final events = data.eventsOn(day);
+    final jobs = data.jobApplicationsOn(day);
     final specials = data.specialDaysOn(day);
     final holidays = specials.where((d) => d.holiday).map((d) => d.name).toList();
     final isToday = _sameDay(day, DateTime.now());
@@ -327,6 +344,7 @@ class _DayCell extends StatelessWidget {
       '${day.month}월 ${day.day}일 ${_weekdays[day.weekday % 7]}요일',
       ...holidays,
       if (events.isNotEmpty) '일정 ${events.length}개',
+      if (jobs.isNotEmpty) '구직활동 ${jobs.length}개',
     ].join(', ');
 
     return Semantics(
@@ -376,17 +394,21 @@ class _DayCell extends StatelessWidget {
                 Expanded(
                   child: Align(
                     alignment: Alignment.bottomCenter,
-                    child: events.isEmpty
+                    // 일정 점(최대 3개) 뒤에 구직활동 점 하나
+                    child: events.isEmpty && jobs.isEmpty
                         ? null
                         : Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              for (var i = 0; i < events.length && i < 3; i++)
+                              for (final color in [
+                                for (var i = 0; i < events.length && i < 3; i++) events[i].displayColor,
+                                if (jobs.isNotEmpty) jobApplicationColor,
+                              ])
                                 Container(
                                   width: 5,
                                   height: 5,
                                   margin: const EdgeInsets.symmetric(horizontal: 1, vertical: 2),
-                                  decoration: BoxDecoration(color: events[i].displayColor, shape: BoxShape.circle),
+                                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
                                 ),
                             ],
                           ),
@@ -403,16 +425,19 @@ class _DayCell extends StatelessWidget {
 
 /// 선택한 날의 특일과 일정 목록
 class _DayDetail extends StatelessWidget {
-  const _DayDetail({required this.day, required this.data, required this.onOpenEvent});
+  const _DayDetail({required this.day, required this.data, required this.onOpenEvent, required this.onOpenScreen});
 
   final DateTime day;
   final CalendarMonthState data;
   final ValueChanged<EventItem> onOpenEvent;
+  final ValueChanged<String> onOpenScreen;
 
   @override
   Widget build(BuildContext context) {
     final events = data.eventsOn(day);
     final specials = data.specialDaysOn(day);
+    final jobs = data.jobApplicationsOn(day);
+    final money = data.moneyOn(day);
     return ListView(
       // 마지막 일정이 '일정 추가' 버튼에 가리지 않게 아래 여백을 둔다
       padding: const EdgeInsets.only(bottom: 80),
@@ -425,6 +450,35 @@ class _DayDetail extends StatelessWidget {
           ),
           subtitle: specials.isEmpty ? null : Text(specials.map((d) => d.name).join(' · ')),
         ),
+        if (money != null)
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.account_balance_wallet_outlined, size: 20),
+            title: Text.rich(
+                semanticsLabel: [
+                  if (money.expense > 0) '지출 ${formatAmount(money.expense)}',
+                  if (money.income > 0) '수입 ${formatAmount(money.income)}',
+                ].join(', '),
+                TextSpan(children: [
+              if (money.expense > 0)
+                TextSpan(text: '지출 -${formatAmount(money.expense)}', style: TextStyle(color: Colors.red.shade600)),
+              if (money.expense > 0 && money.income > 0) const TextSpan(text: '  '),
+              if (money.income > 0)
+                TextSpan(text: '수입 +${formatAmount(money.income)}', style: TextStyle(color: Colors.blue.shade600)),
+            ])),
+            trailing: const Icon(Icons.chevron_right),
+            // 그날이 속한 달의 가계부를 연다 (달력 앞뒤 다른 달 날짜 포함)
+            onTap: () => onOpenScreen('/expenses?month=${DateFormat('yyyy-MM').format(day)}'),
+          ),
+        for (final job in jobs)
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.work_outline, size: 20, color: jobApplicationColor),
+            title: Text('${job.companyName} · ${job.position}'),
+            subtitle: Text('구직활동 · ${job.status.toKoreanLabel()}'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => onOpenScreen('/job-applications'),
+          ),
         if (events.isEmpty)
           const Padding(
             padding: EdgeInsets.all(16),
