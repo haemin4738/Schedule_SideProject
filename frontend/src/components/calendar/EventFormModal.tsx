@@ -76,13 +76,24 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
     control,
     setValue,
     getValues,
-    formState: { errors, isSubmitting, isDirty, dirtyFields },
+    getFieldState,
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<FormValues>({ defaultValues: toFormValues(event, defaultStart, defaultEnd, defaultAllDay) })
   const allDay = useWatch({ control, name: 'allDay' })
   const category = useWatch({ control, name: 'eventCategory' })
   const color = useWatch({ control, name: 'color' })
 
+  // 종료 없이 저장된 일정은 폼에 임시 종료(1시간 뒤)를 채워 보여줄 뿐이다.
+  // 종료·종일을 건드리지 않았으면 종료 없음을 유지하고, 임시 종료로 검증하지도 않는다
+  const keepsNoEnd = () =>
+    isEdit &&
+    event.endAt === null &&
+    !getFieldState('endDate').isDirty &&
+    !getFieldState('endTime').isDirty &&
+    !getFieldState('allDay').isDirty
+
   const validateEnd = () => {
+    if (keepsNoEnd()) return true
     const v = getValues()
     const start = v.allDay ? v.startDate : `${v.startDate}T${v.startTime}`
     const end = v.allDay ? v.endDate : `${v.endDate}T${v.endTime}`
@@ -94,10 +105,7 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
     setError(null)
     try {
       const body = toEventRequest(values)
-      // 종료 없이 저장된 일정은 폼에 임시 종료(1시간 뒤)를 채워 보여줄 뿐이므로, 종료·종일을 건드리지 않았으면 종료 없음을 유지한다
-      if (isEdit && event.endAt === null && !dirtyFields.endDate && !dirtyFields.endTime && !dirtyFields.allDay) {
-        body.endAt = null
-      }
+      if (keepsNoEnd()) body.endAt = null
       if (isEdit) await updateEvent(event.id, body)
       else await createEvent(body)
       onSaved()
@@ -136,11 +144,19 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
   // 목록에 없는 색(다른 클라이언트가 저장한 색)이면 첫 항목을 Tab 진입점으로 둔다
   const colorTabStop = colorValues.includes(color) ? color : ''
   const onColorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
-    if (!step) return
-    e.preventDefault()
     const current = colorValues.indexOf(colorTabStop)
-    const next = colorValues[(current + step + colorValues.length) % colorValues.length]
+    const last = colorValues.length - 1
+    const target = {
+      ArrowRight: (current + 1) % colorValues.length,
+      ArrowDown: (current + 1) % colorValues.length,
+      ArrowLeft: (current - 1 + colorValues.length) % colorValues.length,
+      ArrowUp: (current - 1 + colorValues.length) % colorValues.length,
+      Home: 0,
+      End: last,
+    }[e.key]
+    if (target === undefined) return
+    e.preventDefault()
+    const next = colorValues[target]
     setValue('color', next, { shouldDirty: true })
     e.currentTarget.querySelector<HTMLElement>(`[data-color="${next}"]`)?.focus()
   }

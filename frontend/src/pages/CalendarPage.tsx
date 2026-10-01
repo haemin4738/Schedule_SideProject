@@ -1,6 +1,6 @@
 import { isTokenExpired, refreshSession } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errorMessage'
-import { getEvent, getEventsInRange, type EventDetail } from '@/api/events'
+import { getEvent, getEventsInRange, MAX_EVENTS_IN_RANGE, type EventDetail } from '@/api/events'
 import {
   jobApplicationToCalendarEvent,
   toCalendarEvent,
@@ -96,7 +96,7 @@ export default function CalendarPage() {
   const overlays = useCalendarOverlays(range, layers)
 
   const notices = [
-    ...(truncated && layers.events ? ['일정이 너무 많아 앞의 2,000개만 표시합니다.'] : []),
+    ...(truncated && layers.events ? [`일정이 너무 많아 앞의 ${MAX_EVENTS_IN_RANGE.toLocaleString('ko-KR')}개만 표시합니다.`] : []),
     ...overlays.errors,
   ]
 

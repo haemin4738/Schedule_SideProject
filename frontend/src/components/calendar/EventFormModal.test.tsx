@@ -289,6 +289,38 @@ describe('EventFormModal', () => {
     )
   })
 
+  it('onSubmit_editEventWithoutEndAndStartMovedLater_savesWithoutEndError', async () => {
+    const user = userEvent.setup()
+    mockedUpdate.mockResolvedValue({} as never)
+    renderCreate({ event: { ...detail, endAt: null } })
+
+    // 임시 종료(15:00)보다 늦게 시작을 옮겨도 종료 없음이므로 막지 않는다
+    await user.clear(screen.getByLabelText('시작 시간'))
+    await user.type(screen.getByLabelText('시작 시간'), '18:00')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await waitFor(() =>
+      expect(mockedUpdate).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({ startAt: '2026-09-30T18:00:00', endAt: null }),
+      ),
+    )
+  })
+
+  it('onKeyDown_colorRadioHomeEnd_jumpsToFirstAndLast', async () => {
+    const user = userEvent.setup()
+    renderCreate()
+    const radios = screen.getAllByRole('radio')
+
+    radios[0].focus()
+    await user.keyboard('{End}')
+    expect(radios[radios.length - 1]).toHaveAttribute('aria-checked', 'true')
+    expect(radios[radios.length - 1]).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(radios[0]).toHaveAttribute('aria-checked', 'true')
+    expect(radios[0]).toHaveFocus()
+  })
+
   it('onKeyDown_colorRadioArrows_movesSelectionAndFocusWithSingleTabStop', async () => {
     const user = userEvent.setup()
     renderCreate()

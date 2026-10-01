@@ -225,6 +225,14 @@ class EventControllerTest {
     }
 
     @Test
+    void serialize_eventRequest_doesNotExposeValidationHelper() throws Exception {
+        EventRequest request = new EventRequest("제목", null,
+                LocalDateTime.of(2026, 1, 10, 10, 0), null, false, null, null, null);
+
+        assertThat(objectMapper.writeValueAsString(request)).doesNotContain("endAtNotBeforeStartAt");
+    }
+
+    @Test
     void update_whenEndAtBeforeStartAt_returns400() throws Exception {
         EventRequest invalid = new EventRequest("제목", null,
                 LocalDateTime.of(2026, 1, 10, 0, 0), LocalDateTime.of(2026, 1, 9, 23, 59, 59),

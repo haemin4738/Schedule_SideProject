@@ -47,6 +47,8 @@ export const toLocalDateTime = (date: Date): string => dayjs(date).format('YYYY-
 const PAGE_SIZE = 100
 // 비정상 응답으로 무한 반복하지 않도록 페이지 수 상한을 둔다 (100 × 20 = 한 화면 2000건)
 const MAX_PAGES = 20
+/** 한 화면에 불러오는 일정 최대 개수 */
+export const MAX_EVENTS_IN_RANGE = PAGE_SIZE * MAX_PAGES
 
 /**
  * [from, to] 기간과 겹치는 일정을 모든 페이지에 걸쳐 가져온다.

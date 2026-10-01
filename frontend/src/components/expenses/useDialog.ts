@@ -3,9 +3,11 @@ import { useEffect, useRef } from 'react'
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]'
 
-/** Tab 순서에 들어가는 요소들 (tabindex=-1 인 roving 라디오 등은 제외) */
+/** Tab 순서에 들어가는 요소들 (tabindex=-1 인 roving 라디오, hidden·inert 안의 요소는 제외) */
 const tabbables = (root: HTMLElement): HTMLElement[] =>
-  Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.tabIndex >= 0)
+  Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+    (el) => el.tabIndex >= 0 && !el.closest('[hidden], [inert]'),
+  )
 
 /**
  * 모달 기본 접근성: 열릴 때 대화상자로 포커스 이동, Esc로 닫기, Tab/Shift+Tab 을 대화상자 안에 가두기,
