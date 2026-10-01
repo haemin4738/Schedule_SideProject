@@ -261,4 +261,78 @@ describe('EventFormModal', () => {
 
     expect(props.onClose).toHaveBeenCalledTimes(2)
   })
+
+  it('onSubmit_editEventWithoutEnd_keepsEndAtNull', async () => {
+    const user = userEvent.setup()
+    mockedUpdate.mockResolvedValue({} as never)
+    renderCreate({ event: { ...detail, endAt: null } })
+
+    await user.clear(screen.getByLabelText('제목'))
+    await user.type(screen.getByLabelText('제목'), '제목만 수정')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    // 폼에는 임시 종료(1시간 뒤)가 보이지만 종료를 건드리지 않았으므로 종료 없음을 유지한다
+    await waitFor(() => expect(mockedUpdate).toHaveBeenCalledWith(7, expect.objectContaining({ endAt: null })))
+  })
+
+  it('onSubmit_editEventWithoutEndAndEndChanged_sendsEnd', async () => {
+    const user = userEvent.setup()
+    mockedUpdate.mockResolvedValue({} as never)
+    renderCreate({ event: { ...detail, endAt: null } })
+
+    await user.clear(screen.getByLabelText('종료 시간'))
+    await user.type(screen.getByLabelText('종료 시간'), '16:00')
+    await user.click(screen.getByRole('button', { name: '저장' }))
+
+    await waitFor(() =>
+      expect(mockedUpdate).toHaveBeenCalledWith(7, expect.objectContaining({ endAt: '2026-09-30T16:00:00' })),
+    )
+  })
+
+  it('onKeyDown_colorRadioArrows_movesSelectionAndFocusWithSingleTabStop', async () => {
+    const user = userEvent.setup()
+    renderCreate()
+    const radios = screen.getAllByRole('radio')
+    const auto = screen.getByRole('radio', { name: '카테고리 기본 색' })
+
+    // Tab 진입점은 선택된 항목 하나뿐
+    expect(radios.filter((r) => r.tabIndex === 0)).toEqual([auto])
+
+    auto.focus()
+    await user.keyboard('{ArrowRight}')
+    expect(radios[1]).toHaveAttribute('aria-checked', 'true')
+    expect(radios[1]).toHaveFocus()
+    expect(radios[1]).toHaveAttribute('tabindex', '0')
+    expect(auto).toHaveAttribute('tabindex', '-1')
+
+    // 처음에서 왼쪽으로 가면 마지막으로 돈다
+    await user.keyboard('{ArrowLeft}{ArrowLeft}')
+    expect(radios[radios.length - 1]).toHaveAttribute('aria-checked', 'true')
+    expect(radios[radios.length - 1]).toHaveFocus()
+  })
+
+  it('render_editWithUnlistedColor_firstRadioIsTabStop', () => {
+    renderCreate({ event: { ...detail, color: '#123456' } })
+
+    const tabStops = screen.getAllByRole('radio').filter((r) => r.tabIndex === 0)
+    expect(tabStops).toEqual([screen.getByRole('radio', { name: '카테고리 기본 색' })])
+  })
+
+  it('onKeyDown_tabAtLastElement_wrapsFocusInsideDialog', async () => {
+    const user = userEvent.setup()
+    renderCreate()
+    const dialog = screen.getByRole('dialog')
+    const title = screen.getByLabelText('제목')
+
+    // Shift+Tab 을 처음 요소에서 누르면 마지막 요소로, 거기서 Tab 이면 다시 처음으로
+    title.focus()
+    await user.tab({ shift: true })
+    const last = document.activeElement as HTMLElement
+    expect(dialog).toContainElement(last)
+    expect(last).not.toBe(title)
+
+    await user.tab()
+    expect(title).toHaveFocus()
+  })
+
 })
