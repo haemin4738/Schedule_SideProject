@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import JobApplicationsPage from './JobApplicationsPage'
 import {
@@ -31,13 +31,34 @@ const sampleItem = {
   appliedAt: '2026-09-01',
 }
 
-function renderPage() {
+function LocationProbe() {
+  const location = useLocation()
+  return <p data-testid="location">{location.pathname + location.search}</p>
+}
+
+function renderPage(initialEntry = '/job-applications') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <JobApplicationsPage />
+      <LocationProbe />
     </MemoryRouter>,
   )
 }
+
+const detailResponse = (over: Record<string, unknown> = {}) =>
+  ({
+    data: {
+      success: true,
+      data: {
+        ...sampleItem,
+        jobPostingUrl: 'https://example.com/posting',
+        memo: '캘린더에서 열림',
+        createdAt: '',
+        updatedAt: '',
+        ...over,
+      },
+    },
+  }) as never
 
 function mockListResponse(items: typeof sampleItem[], meta = { page: 0, size: 20, total: items.length, totalPages: 1 }) {
   mockedGetJobApplications.mockResolvedValue({
@@ -183,6 +204,102 @@ describe('JobApplicationsPage', () => {
         page: 1,
         size: 20,
       })
+    })
+  })
+  describe('?id 로 진입', () => {
+    it('startEdit_previousResponseArrivesLate_keepsLatestForm', async () => {
+      const user = userEvent.setup()
+      mockListResponse([
+        { ...sampleItem, id: 1, companyName: '먼저회사' },
+        { ...sampleItem, id: 2, companyName: '나중회사' },
+      ])
+      let resolveFirst!: (v: unknown) => void
+      mockedGetJobApplication
+        .mockImplementationOnce(() => new Promise((r) => (resolveFirst = r)) as never)
+        .mockResolvedValueOnce(detailResponse({ id: 2, companyName: '나중회사' }))
+      renderPage()
+      const editButtons = await screen.findAllByRole('button', { name: '수정' })
+
+      await user.click(editButtons[0])
+      await user.click(editButtons[1])
+      await waitFor(() => expect(screen.getByPlaceholderText('회사명')).toHaveValue('나중회사'))
+      resolveFirst(detailResponse({ id: 1, companyName: '먼저회사' }))
+
+      // 늦게 온 첫 응답이 마지막으로 누른 내역의 폼을 덮어쓰지 않는다
+      await new Promise((r) => setTimeout(r, 0))
+      expect(screen.getByPlaceholderText('회사명')).toHaveValue('나중회사')
+    })
+
+    it('cancelEdit_whileDetailLoading_ignoresResponse', async () => {
+      const user = userEvent.setup()
+      mockListResponse([sampleItem])
+      let resolveDetail!: (v: unknown) => void
+      mockedGetJobApplication
+        .mockResolvedValueOnce(detailResponse({ id: 1, companyName: '열린회사' }))
+        .mockImplementationOnce(() => new Promise((r) => (resolveDetail = r)) as never)
+      renderPage()
+      await user.click(await screen.findByRole('button', { name: '수정' }))
+      await waitFor(() => expect(screen.getByPlaceholderText('회사명')).toHaveValue('열린회사'))
+
+      // 다시 수정을 눌러 조회가 진행 중일 때 취소하면, 늦게 온 응답으로 폼이 다시 열리지 않는다
+      await user.click(screen.getAllByRole('button', { name: '수정' })[0])
+      await user.click(screen.getByRole('button', { name: '취소' }))
+      resolveDetail(detailResponse({ id: 1, companyName: '늦은회사' }))
+
+      await new Promise((r) => setTimeout(r, 0))
+      expect(screen.getByPlaceholderText('회사명')).toHaveValue('')
+      expect(screen.getByRole('heading', { name: '지원 내역 추가' })).toBeInTheDocument()
+    })
+
+    it('render_withIdParam_loadsDetailFillsEditFormAndClearsParam', async () => {
+      mockListResponse([])
+      mockedGetJobApplication.mockResolvedValue(detailResponse({ id: 7, companyName: '캘린더회사' }))
+      renderPage('/job-applications?id=7')
+
+      await waitFor(() => expect(screen.getByPlaceholderText('회사명')).toHaveValue('캘린더회사'))
+      expect(mockedGetJobApplication).toHaveBeenCalledTimes(1)
+      expect(mockedGetJobApplication).toHaveBeenCalledWith(7)
+      expect(screen.getByPlaceholderText('메모')).toHaveValue('캘린더에서 열림')
+      expect(screen.getByRole('button', { name: '수정 저장' })).toBeInTheDocument()
+      expect(screen.getByTestId('location')).toHaveTextContent(/^\/job-applications$/)
+      await waitFor(() => expect(screen.getByPlaceholderText('회사명')).toHaveFocus())
+    })
+
+    it('render_withIdParam_savesToThatId', async () => {
+      const user = userEvent.setup()
+      mockListResponse([])
+      mockedGetJobApplication.mockResolvedValue(detailResponse({ id: 7 }))
+      mockedUpdateJobApplication.mockResolvedValue({
+        data: { success: true, data: { ...sampleItem, id: 7, createdAt: '', updatedAt: '' } },
+      } as never)
+      renderPage('/job-applications?id=7')
+      await waitFor(() => expect(screen.getByPlaceholderText('회사명')).toHaveValue('테스트회사'))
+
+      await user.click(screen.getByRole('button', { name: '수정 저장' }))
+
+      await waitFor(() => expect(mockedUpdateJobApplication).toHaveBeenCalledWith(7, expect.any(Object)))
+    })
+
+    it.each(['abc', '0', '-3', '1.5', '99999999999999999999'])(
+      'render_withInvalidIdParam_%s_ignoresAndClearsParam',
+      async (param) => {
+        mockListResponse([])
+        renderPage(`/job-applications?id=${param}`)
+
+        await screen.findByText('지원 내역이 없습니다.')
+        expect(mockedGetJobApplication).not.toHaveBeenCalled()
+        expect(screen.getByTestId('location')).toHaveTextContent(/^\/job-applications$/)
+        expect(screen.getByRole('button', { name: '추가' })).toBeInTheDocument()
+      },
+    )
+
+    it('render_withIdParamDetailFails_showsFormError', async () => {
+      mockListResponse([])
+      mockedGetJobApplication.mockRejectedValue(new Error('404'))
+      renderPage('/job-applications?id=7')
+
+      expect(await screen.findByText('상세 정보를 불러오지 못했습니다.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '추가' })).toBeInTheDocument()
     })
   })
 })

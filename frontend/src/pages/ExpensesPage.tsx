@@ -22,7 +22,7 @@ import { EXPENSE_TYPE_LABELS, EXPENSE_TYPE_OPTIONS, type ExpenseType } from '@/c
 import dayjs, { type Dayjs } from 'dayjs'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import LogoutButton from '@/components/LogoutButton'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 const PAGE_SIZE = 20
 const DATE_FORMAT = 'YYYY-MM-DD'
@@ -56,8 +56,15 @@ const fetchCategories = (): Promise<CategoriesResult> =>
       }),
     )
 
+/** ?month=YYYY-MM (캘린더의 가계부 합계에서 이동) — 형식이 틀리면 이번 달 */
+const initialMonth = (param: string | null): Dayjs => {
+  if (param && /^\d{4}-(0[1-9]|1[0-2])$/.test(param)) return dayjs(`${param}-01`).startOf('month')
+  return dayjs().startOf('month')
+}
+
 export default function ExpensesPage() {
-  const [month, setMonth] = useState<Dayjs>(() => dayjs().startOf('month'))
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [month, setMonth] = useState<Dayjs>(() => initialMonth(searchParams.get('month')))
   const [typeFilter, setTypeFilter] = useState<ExpenseType | ''>('')
   const [categoryFilter, setCategoryFilter] = useState<number | ''>('')
   const [page, setPage] = useState(0)
@@ -181,6 +188,15 @@ export default function ExpensesPage() {
   const moveMonth = (diff: number) => {
     cancelPendingEdit()
     setMonth((m) => m.add(diff, 'month'))
+    // 캘린더에서 넘어온 ?month= 가 남아 있으면 새로고침 시 그 달로 돌아가므로 지운다
+    if (searchParams.has('month'))
+      setSearchParams(
+        (params) => {
+          params.delete('month')
+          return params
+        },
+        { replace: true },
+      )
     setPage(0)
     setActionError(null)
   }
