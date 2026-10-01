@@ -76,8 +76,7 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
     control,
     setValue,
     getValues,
-    getFieldState,
-    formState: { errors, isSubmitting, isDirty },
+    formState: { errors, isSubmitting, isDirty, dirtyFields },
   } = useForm<FormValues>({ defaultValues: toFormValues(event, defaultStart, defaultEnd, defaultAllDay) })
   const allDay = useWatch({ control, name: 'allDay' })
   const category = useWatch({ control, name: 'eventCategory' })
@@ -85,12 +84,9 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
 
   // 종료 없이 저장된 일정은 폼에 임시 종료(1시간 뒤)를 채워 보여줄 뿐이다.
   // 종료·종일을 건드리지 않았으면 종료 없음을 유지하고, 임시 종료로 검증하지도 않는다
+  // dirtyFields 는 formState 에서 꺼내 읽어야 구독돼 값이 보장된다 (react-hook-form 문서)
   const keepsNoEnd = () =>
-    isEdit &&
-    event.endAt === null &&
-    !getFieldState('endDate').isDirty &&
-    !getFieldState('endTime').isDirty &&
-    !getFieldState('allDay').isDirty
+    isEdit && event.endAt === null && !dirtyFields.endDate && !dirtyFields.endTime && !dirtyFields.allDay
 
   const validateEnd = () => {
     if (keepsNoEnd()) return true
