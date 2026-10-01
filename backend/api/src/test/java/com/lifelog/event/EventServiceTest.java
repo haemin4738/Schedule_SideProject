@@ -9,13 +9,13 @@ import com.lifelog.domain.user.UserRepository;
 import com.lifelog.event.dto.EventRequest;
 import com.lifelog.event.dto.EventResponse;
 import com.lifelog.event.dto.EventSummary;
-import com.lifelog.sse.SseService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -32,7 +32,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
- * EventService 단위 테스트. Repository/Cache/SSE는 Mock으로 대체한다 (순수 단위 테스트).
+ * EventService 단위 테스트. Repository/Cache/이벤트 발행은 Mock으로 대체한다 (순수 단위 테스트).
  */
 @ExtendWith(MockitoExtension.class)
 class EventServiceTest {
@@ -44,7 +44,7 @@ class EventServiceTest {
     @Mock
     private EventCacheService eventCacheService;
     @Mock
-    private SseService sseService;
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private EventService eventService;
@@ -98,8 +98,9 @@ class EventServiceTest {
 
         assertThat(response.id()).isEqualTo(100L);
         assertThat(response.title()).isEqualTo("제목");
-        verify(eventCacheService).evictAll();
-        verify(sseService).publish(1L);
+        // 캐시 무효화·SSE 는 커밋 후 리스너가 처리한다 — 서비스는 변경 이벤트만 발행한다
+        verify(eventPublisher).publishEvent(new EventsChangedEvent(1L));
+        verify(eventCacheService, never()).evictAll();
     }
 
     @Test
@@ -111,7 +112,7 @@ class EventServiceTest {
                 .extracting(e -> ((BusinessException) e).getStatus())
                 .isEqualTo(HttpStatus.NOT_FOUND);
 
-        verifyNoInteractions(eventRepository, eventCacheService, sseService);
+        verifyNoInteractions(eventRepository, eventCacheService, eventPublisher);
     }
 
     @Test
@@ -159,8 +160,9 @@ class EventServiceTest {
 
         assertThat(response.title()).isEqualTo("변경된 제목");
         assertThat(response.eventCategory()).isEqualTo(EventCategory.REMINDER);
-        verify(eventCacheService).evictAll();
-        verify(sseService).publish(1L);
+        // 캐시 무효화·SSE 는 커밋 후 리스너가 처리한다 — 서비스는 변경 이벤트만 발행한다
+        verify(eventPublisher).publishEvent(new EventsChangedEvent(1L));
+        verify(eventCacheService, never()).evictAll();
     }
 
     @Test
@@ -174,7 +176,7 @@ class EventServiceTest {
                 .isEqualTo(HttpStatus.FORBIDDEN);
 
         verify(eventRepository, never()).save(any());
-        verifyNoInteractions(eventCacheService, sseService);
+        verifyNoInteractions(eventCacheService, eventPublisher);
     }
 
     @Test
@@ -185,8 +187,9 @@ class EventServiceTest {
         eventService.delete(1L, 10L);
 
         verify(eventRepository).delete(event);
-        verify(eventCacheService).evictAll();
-        verify(sseService).publish(1L);
+        // 캐시 무효화·SSE 는 커밋 후 리스너가 처리한다 — 서비스는 변경 이벤트만 발행한다
+        verify(eventPublisher).publishEvent(new EventsChangedEvent(1L));
+        verify(eventCacheService, never()).evictAll();
     }
 
     @Test
@@ -200,7 +203,7 @@ class EventServiceTest {
                 .isEqualTo(HttpStatus.FORBIDDEN);
 
         verify(eventRepository, never()).delete(any());
-        verifyNoInteractions(eventCacheService, sseService);
+        verifyNoInteractions(eventCacheService, eventPublisher);
     }
 
     @Test

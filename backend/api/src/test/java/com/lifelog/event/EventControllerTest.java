@@ -31,6 +31,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -207,6 +208,34 @@ class EventControllerTest {
                         .content(objectMapper.writeValueAsString(invalid)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("시작 시간은 필수입니다."));
+    }
+
+    @Test
+    void create_whenEndAtBeforeStartAt_returns400WithValidationMessage() throws Exception {
+        EventRequest invalid = new EventRequest("제목", "설명",
+                LocalDateTime.of(2026, 1, 10, 10, 0), LocalDateTime.of(2026, 1, 10, 9, 59),
+                false, null, null, null);
+
+        mockMvc.perform(post("/api/v1/events").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("종료 시간은 시작 시간보다 빠를 수 없습니다."));
+        verifyNoInteractions(eventService);
+    }
+
+    @Test
+    void update_whenEndAtBeforeStartAt_returns400() throws Exception {
+        EventRequest invalid = new EventRequest("제목", null,
+                LocalDateTime.of(2026, 1, 10, 0, 0), LocalDateTime.of(2026, 1, 9, 23, 59, 59),
+                true, null, null, null);
+
+        mockMvc.perform(put("/api/v1/events/1").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("종료 시간은 시작 시간보다 빠를 수 없습니다."));
+        verifyNoInteractions(eventService);
     }
 
     @Test
