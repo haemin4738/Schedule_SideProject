@@ -68,6 +68,24 @@ export interface CategorySummaryResponse {
   categories: CategoryItem[]
 }
 
+export interface DailyItem {
+  /** yyyy-MM-dd */
+  date: string
+  income: number
+  expense: number
+  net: number
+}
+
+/** 일별 요약 — days 는 내역이 있는 날짜만 포함(sparse), 날짜 오름차순 */
+export interface DailySummaryResponse {
+  from: string
+  to: string
+  totalIncome: number
+  totalExpense: number
+  net: number
+  days: DailyItem[]
+}
+
 // ── 내역 ──────────────────────────────────────────────
 
 export const getExpenses = (params: {
@@ -124,3 +142,7 @@ export const getCategorySummary = (params: { type: ExpenseType; from: string; to
     '/api/v1/expenses/summary/by-category',
     { params },
   )
+
+/** from/to: yyyy-MM-dd (양끝 포함, 최대 366일) */
+export const getDailySummary = (params: { from: string; to: string }) =>
+  client.get<{ success: boolean; data: DailySummaryResponse }>('/api/v1/expenses/summary/daily', { params })

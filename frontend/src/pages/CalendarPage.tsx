@@ -1,7 +1,21 @@
 import { isTokenExpired, refreshSession } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errorMessage'
 import { getEvent, getEventsInRange, type EventDetail } from '@/api/events'
-import { toCalendarEvent, visibleRange, type CalendarEvent } from '@/components/calendar/calendarUtils'
+import {
+  jobApplicationToCalendarEvent,
+  toCalendarEvent,
+  visibleRange,
+  type CalendarEvent,
+} from '@/components/calendar/calendarUtils'
+import {
+  CALENDAR_LAYER_OPTIONS,
+  loadLayers,
+  saveLayers,
+  type CalendarLayer,
+  type CalendarLayers,
+} from '@/components/calendar/calendarLayers'
+import { CalendarOverlayContext, type CalendarOverlayValue } from '@/components/calendar/calendarOverlayContext'
+import useCalendarOverlays from '@/components/calendar/useCalendarOverlays'
 import EventFormModal from '@/components/calendar/EventFormModal'
 import {
   CalendarToolbar,
@@ -24,7 +38,7 @@ import {
   type SlotInfo,
   type View,
 } from 'react-big-calendar'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 dayjs.locale('ko')
 const localizer = dayjsLocalizer(dayjs)
@@ -73,8 +87,35 @@ export default function CalendarPage() {
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [error, setError] = useState<string | null>(null)
   const [modal, setModal] = useState<ModalState>(null)
+  const [layers, setLayers] = useState<CalendarLayers>(loadLayers)
+  const navigate = useNavigate()
 
   const range = useMemo(() => visibleRange(date, view), [date, view])
+  const overlays = useCalendarOverlays(range, layers)
+
+  const toggleLayer = (layer: CalendarLayer) => {
+    const next = { ...layers, [layer]: !layers[layer] }
+    setLayers(next)
+    saveLayers(next)
+  }
+
+  // 일정과 구직활동(지원일 종일 항목)을 한 달력에 함께 그린다
+  const calendarItems = useMemo(
+    () => [
+      ...(layers.events ? events : []),
+      ...(layers.jobApplications ? overlays.jobApplications.map(jobApplicationToCalendarEvent) : []),
+    ],
+    [events, layers.events, layers.jobApplications, overlays.jobApplications],
+  )
+
+  const overlayValue = useMemo<CalendarOverlayValue>(
+    () => ({
+      specialDays: overlays.specialDays,
+      expenses: overlays.expenses,
+      showSpecialDayNames: layers.specialDays,
+    }),
+    [overlays.specialDays, overlays.expenses, layers.specialDays],
+  )
   // 늦게 도착한 이전 범위 응답이 현재 화면을 덮어쓰지 않도록 요청 순번을 둔다
   const requestSeq = useRef(0)
 
@@ -136,16 +177,24 @@ export default function CalendarPage() {
 
   // 일정을 빠르게 연달아 누르면 마지막으로 누른 일정만 연다
   const selectSeq = useRef(0)
-  const onSelectEvent = useCallback(async (event: CalendarEvent) => {
-    const seq = ++selectSeq.current
-    try {
+  const onSelectEvent = useCallback(
+    async (event: CalendarEvent) => {
+      const seq = ++selectSeq.current
+      // 구직활동은 구직활동 화면의 수정 폼으로 보낸다
+      if (event.kind === 'jobApplication') {
+        navigate(`/job-applications?id=${event.id}`)
+        return
+      }
+      try {
       // 목록에는 설명·장소가 없으므로 수정 전에 단건을 조회한다
-      const { data } = await getEvent(event.id)
-      if (seq === selectSeq.current) setModal({ mode: 'edit', event: data.data })
-    } catch (err) {
-      if (seq === selectSeq.current) setError(getApiErrorMessage(err, '일정을 불러오지 못했습니다.'))
-    }
-  }, [])
+        const { data } = await getEvent(event.id)
+        if (seq === selectSeq.current) setModal({ mode: 'edit', event: data.data })
+      } catch (err) {
+        if (seq === selectSeq.current) setError(getApiErrorMessage(err, '일정을 불러오지 못했습니다.'))
+      }
+    },
+    [navigate],
+  )
 
   // 월간 보기와 주·일 보기의 종일 줄 일정은 react-big-calendar 가 포커스를 주지 않으므로 키보드로 열 수 있는 요소로 감싼다
   const EventLabel = useMemo(
@@ -215,42 +264,69 @@ export default function CalendarPage() {
         </p>
       )}
 
+      {/* live region 은 항상 두고 내용만 바꾼다 (내용과 함께 새로 삽입되면 스크린리더가 읽지 않을 수 있다) */}
+      <div role="status" className={overlays.errors.length > 0 ? 'mx-4 mt-2' : 'sr-only'}>
+        {overlays.errors.length > 0 && (
+          <p className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{overlays.errors.join(' ')}</p>
+        )}
+      </div>
+
+      <div role="group" aria-label="캘린더에 표시할 항목" className="flex flex-wrap gap-2 px-4 pt-3">
+        {CALENDAR_LAYER_OPTIONS.map(([layer, label]) => (
+          <button
+            key={layer}
+            type="button"
+            aria-pressed={layers[layer]}
+            onClick={() => toggleLayer(layer)}
+            className={`rounded-full border px-3 py-1 text-xs ${
+              layers[layer]
+                ? 'border-blue-200 bg-blue-50 font-medium text-blue-700'
+                : 'border-gray-300 text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <main className="lifelog-calendar min-h-0 flex-1 p-4">
-        <Calendar<CalendarEvent>
-          localizer={localizer}
-          culture="ko"
-          events={events}
-          date={date}
-          view={view}
-          views={VIEWS}
-          onNavigate={setDate}
-          onView={setView}
-          messages={messages}
-          formats={formats}
-          selectable
-          popup
-          onSelectSlot={onSelectSlot}
-          onSelectEvent={onSelectEvent}
-          // 주·일 보기의 일정은 포커스는 되지만 Enter 로 열리지 않아 직접 연결한다
-          onKeyPressEvent={(event, e) => {
-            const ke = e as React.KeyboardEvent<HTMLElement>
-            if (ke.key === 'Enter' || ke.key === ' ') {
-              ke.preventDefault()
-              void onSelectEvent(event)
-            }
-          }}
-          scrollToTime={dayjs().hour(8).minute(0).toDate()}
-          eventPropGetter={(event) => ({
-            style: { backgroundColor: event.color, color: readableTextColor(event.color) },
-          })}
-          components={{
-            toolbar: CalendarToolbar,
-            month: { header: MonthWeekdayHeader, dateHeader: MonthDateHeader, event: EventLabel },
-            week: { header: DayColumnHeader, event: EventLabel },
-            day: { header: DayColumnHeader, event: EventLabel },
-          }}
-          style={{ height: '100%' }}
-        />
+        <CalendarOverlayContext value={overlayValue}>
+          <Calendar<CalendarEvent>
+            localizer={localizer}
+            culture="ko"
+            events={calendarItems}
+            date={date}
+            view={view}
+            views={VIEWS}
+            onNavigate={setDate}
+            onView={setView}
+            messages={messages}
+            formats={formats}
+            selectable
+            popup
+            onSelectSlot={onSelectSlot}
+            onSelectEvent={onSelectEvent}
+            // 주·일 보기의 일정은 포커스는 되지만 Enter 로 열리지 않아 직접 연결한다
+            onKeyPressEvent={(event, e) => {
+              const ke = e as React.KeyboardEvent<HTMLElement>
+              if (ke.key === 'Enter' || ke.key === ' ') {
+                ke.preventDefault()
+                void onSelectEvent(event)
+              }
+            }}
+            scrollToTime={dayjs().hour(8).minute(0).toDate()}
+            eventPropGetter={(event) => ({
+              style: { backgroundColor: event.color, color: readableTextColor(event.color) },
+            })}
+            components={{
+              toolbar: CalendarToolbar,
+              month: { header: MonthWeekdayHeader, dateHeader: MonthDateHeader, event: EventLabel },
+              week: { header: DayColumnHeader, event: EventLabel },
+              day: { header: DayColumnHeader, event: EventLabel },
+            }}
+            style={{ height: '100%' }}
+          />
+        </CalendarOverlayContext>
       </main>
 
       {modal && (

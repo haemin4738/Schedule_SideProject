@@ -14,8 +14,8 @@ import {
   type JobApplicationStatus,
 } from '@/constants/jobApplicationStatus'
 import LogoutButton from '@/components/LogoutButton'
-import { Link } from 'react-router-dom'
-import { useCallback, useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 
 const PAGE_SIZE = 20
@@ -47,6 +47,8 @@ export default function JobApplicationsPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const formRef = useRef<HTMLFormElement>(null)
 
   const {
     register,
@@ -79,11 +81,17 @@ export default function JobApplicationsPage() {
     loadItems()
   }, [loadItems])
 
-  const startEdit = async (item: JobApplicationSummary) => {
-    setFormError(null)
+  // 수정 버튼을 연달아 누르거나 ?id= 처리가 겹칠 때 마지막 요청만 폼에 반영한다
+  const editSeq = useRef(0)
+
+  /** 상세를 불러와 수정 폼을 채운다. 최신 요청이 성공했을 때만 true */
+  const startEdit = useCallback(async (id: number): Promise<boolean> => {
+    const seq = ++editSeq.current
     try {
-      const { data } = await getJobApplication(item.id)
-      setEditingId(item.id)
+      const { data } = await getJobApplication(id)
+      if (seq !== editSeq.current) return false
+      setFormError(null)
+      setEditingId(id)
       reset({
         companyName: data.data.companyName,
         position: data.data.position,
@@ -92,12 +100,31 @@ export default function JobApplicationsPage() {
         jobPostingUrl: data.data.jobPostingUrl ?? '',
         memo: data.data.memo ?? '',
       })
+      return true
     } catch {
-      setFormError('상세 정보를 불러오지 못했습니다.')
+      if (seq === editSeq.current) setFormError('상세 정보를 불러오지 못했습니다.')
+      return false
     }
-  }
+  }, [reset])
+
+  // 캘린더에서 구직활동을 누르면 ?id= 로 들어온다 → 해당 내역의 수정 폼을 연다
+  const idParam = searchParams.get('id')
+  useEffect(() => {
+    if (!idParam) return
+    // 새로고침·뒤로가기로 같은 폼이 다시 열리지 않게 주소에서 지운다
+    setSearchParams({}, { replace: true })
+    const id = Number(idParam)
+    if (!Number.isSafeInteger(id) || id <= 0) return
+    // 주소에서 id 를 지우면 이 effect 가 다시 정리되므로 취소 플래그 대신 startEdit 의 요청 순번으로 늦은 응답을 거른다
+    void startEdit(id).then((ok) => {
+      if (!ok) return
+      formRef.current?.scrollIntoView?.({ block: 'start' })
+      formRef.current?.querySelector('input')?.focus()
+    })
+  }, [idParam, setSearchParams, startEdit])
 
   const cancelEdit = () => {
+    editSeq.current++
     setEditingId(null)
     setFormError(null)
     reset(emptyForm)
@@ -151,6 +178,7 @@ export default function JobApplicationsPage() {
       </div>
 
       <form
+        ref={formRef}
         onSubmit={handleSubmit(onSubmit)}
         className="mb-6 rounded-xl bg-white p-6 shadow"
       >
@@ -277,7 +305,7 @@ export default function JobApplicationsPage() {
                 <td className="px-4 py-2">{item.appliedAt}</td>
                 <td className="px-4 py-2 text-right">
                   <button
-                    onClick={() => startEdit(item)}
+                    onClick={() => startEdit(item.id)}
                     className="mr-2 text-blue-500 hover:underline"
                   >
                     수정

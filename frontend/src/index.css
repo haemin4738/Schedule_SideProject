@@ -14,6 +14,15 @@
   padding: 6px 0 2px;
   font-weight: 500;
 }
+/* 주·일 보기 머리글 아래 특일 이름·가계부 합계가 잘리지 않게 줄바꿈을 허용한다 */
+.lifelog-calendar .rbc-time-header .rbc-header {
+  overflow: visible;
+  white-space: normal;
+}
+/* 종일 칸(height: 100%)에 밀려 머리글 줄이 줄어들면 글자가 종일 일정 아래로 겹친다 */
+.lifelog-calendar .rbc-time-header-cell {
+  flex-shrink: 0;
+}
 .lifelog-calendar .rbc-month-row + .rbc-month-row,
 .lifelog-calendar .rbc-day-bg + .rbc-day-bg,
 .lifelog-calendar .rbc-time-content > * + * > *,
