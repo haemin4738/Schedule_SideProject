@@ -98,6 +98,12 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     );
   }
 
+  /// 다른 화면에서 고친 내용(가계부·구직활동)이 30초 주기를 기다리지 않고 보이도록 돌아오면 다시 불러온다
+  Future<void> _openScreen(String location) async {
+    await context.push(location);
+    if (mounted) ref.read(eventsProvider.notifier).refresh();
+  }
+
   void _goToToday() {
     ref.read(eventsProvider.notifier).goToToday();
     setState(() => _selected = DateTime.now());
@@ -120,12 +126,12 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
           IconButton(
             icon: const Icon(Icons.work_outline),
             tooltip: '구직활동',
-            onPressed: () => context.push('/job-applications'),
+            onPressed: () => _openScreen('/job-applications'),
           ),
           IconButton(
             icon: const Icon(Icons.account_balance_wallet_outlined),
             tooltip: '가계부',
-            onPressed: () => context.push('/expenses'),
+            onPressed: () => _openScreen('/expenses'),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -169,6 +175,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                 selected: _selected,
                 onSelect: (day) => setState(() => _selected = day),
                 onOpenEvent: (item) => _openForm(item: item),
+                onOpenScreen: _openScreen,
               ),
             ),
           ),
@@ -246,6 +253,7 @@ class _MonthBody extends StatelessWidget {
     required this.selected,
     required this.onSelect,
     required this.onOpenEvent,
+    required this.onOpenScreen,
   });
 
   final DateTime month;
@@ -253,6 +261,7 @@ class _MonthBody extends StatelessWidget {
   final DateTime selected;
   final ValueChanged<DateTime> onSelect;
   final ValueChanged<EventItem> onOpenEvent;
+  final ValueChanged<String> onOpenScreen;
 
   @override
   Widget build(BuildContext context) {
@@ -298,7 +307,9 @@ class _MonthBody extends StatelessWidget {
               ),
             ),
             const Divider(height: 1),
-            Expanded(child: _DayDetail(day: selected, data: data, onOpenEvent: onOpenEvent)),
+            Expanded(
+              child: _DayDetail(day: selected, data: data, onOpenEvent: onOpenEvent, onOpenScreen: onOpenScreen),
+            ),
           ],
         );
       },
@@ -414,11 +425,12 @@ class _DayCell extends StatelessWidget {
 
 /// 선택한 날의 특일과 일정 목록
 class _DayDetail extends StatelessWidget {
-  const _DayDetail({required this.day, required this.data, required this.onOpenEvent});
+  const _DayDetail({required this.day, required this.data, required this.onOpenEvent, required this.onOpenScreen});
 
   final DateTime day;
   final CalendarMonthState data;
   final ValueChanged<EventItem> onOpenEvent;
+  final ValueChanged<String> onOpenScreen;
 
   @override
   Widget build(BuildContext context) {
@@ -442,7 +454,12 @@ class _DayDetail extends StatelessWidget {
           ListTile(
             dense: true,
             leading: const Icon(Icons.account_balance_wallet_outlined, size: 20),
-            title: Text.rich(TextSpan(children: [
+            title: Text.rich(
+                semanticsLabel: [
+                  if (money.expense > 0) '지출 ${formatAmount(money.expense)}',
+                  if (money.income > 0) '수입 ${formatAmount(money.income)}',
+                ].join(', '),
+                TextSpan(children: [
               if (money.expense > 0)
                 TextSpan(text: '지출 -${formatAmount(money.expense)}', style: TextStyle(color: Colors.red.shade600)),
               if (money.expense > 0 && money.income > 0) const TextSpan(text: '  '),
@@ -450,7 +467,8 @@ class _DayDetail extends StatelessWidget {
                 TextSpan(text: '수입 +${formatAmount(money.income)}', style: TextStyle(color: Colors.blue.shade600)),
             ])),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.push('/expenses'),
+            // 그날이 속한 달의 가계부를 연다 (달력 앞뒤 다른 달 날짜 포함)
+            onTap: () => onOpenScreen('/expenses?month=${DateFormat('yyyy-MM').format(day)}'),
           ),
         for (final job in jobs)
           ListTile(
@@ -459,7 +477,7 @@ class _DayDetail extends StatelessWidget {
             title: Text('${job.companyName} · ${job.position}'),
             subtitle: Text('구직활동 · ${job.status.toKoreanLabel()}'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.push('/job-applications'),
+            onTap: () => onOpenScreen('/job-applications'),
           ),
         if (events.isEmpty)
           const Padding(

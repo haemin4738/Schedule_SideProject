@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/features/calendar/event_category.dart';
 import 'package:mobile/features/calendar/provider/events_provider.dart';
-import 'package:flutter/material.dart' show Color;
+import 'package:flutter/material.dart' show Color, FlutterError, FlutterErrorDetails;
 
 import '../expenses/expense_fake_http.dart';
 
@@ -22,6 +22,14 @@ Map<String, Object?> eventJson(
   bool allDay = false,
 }) => {'id': id, 'title': title, 'startAt': startAt, 'endAt': endAt, 'allDay': allDay};
 
+/// 일정 외 부가 조회(특일·구직활동·가계부)에 빈 정상 응답. 일정 경로면 null
+ResponseBody? _aux(RequestOptions o) => switch (o.path) {
+      _special => ok([]),
+      '/api/v1/job-applications' => ok([], meta: {'page': 0, 'size': 100, 'total': 0, 'totalPages': 0}),
+      '/api/v1/expenses/summary/daily' => ok({'days': []}),
+      _ => null,
+    };
+
 ResponseBody eventsPage(List<Map<String, Object?>> items, {int page = 0, int totalPages = 1}) =>
     ok(items, meta: {'page': page, 'size': 100, 'total': items.length, 'totalPages': totalPages});
 
@@ -35,7 +43,7 @@ void main() {
   }
 
   setUp(() {
-    handler = (o) => o.path == _special ? ok([]) : eventsPage([eventJson(1)]);
+    handler = (o) => _aux(o) ?? eventsPage([eventJson(1)]);
   });
 
   test('refresh_초기생성_6주달력범위로일정과특일을조회한다', () async {
@@ -56,9 +64,7 @@ void main() {
   });
 
   test('refresh_종료없는일정_오류없이파싱하고시작일에표시한다', () async {
-    handler = (o) => o.path == _special
-        ? ok([])
-        : eventsPage([eventJson(1, startAt: '2026-10-08T09:00:00', endAt: null)]);
+    handler = (o) => _aux(o) ?? eventsPage([eventJson(1, startAt: '2026-10-08T09:00:00', endAt: null)]);
     final notifier = create();
     await until(() => !notifier.state.isLoading);
 
@@ -96,7 +102,7 @@ void main() {
     final notifier = create();
     await until(() => !notifier.state.isLoading);
     final pending = Completer<ResponseBody>();
-    handler = (o) => o.path == _special ? ok([]) : pending.future;
+    handler = (o) => _aux(o) ?? pending.future;
 
     final refreshing = notifier.refresh();
     // 30초 주기 갱신 중에도 달력이 깜빡이지 않는다
@@ -123,7 +129,8 @@ void main() {
 
   test('refresh_여러페이지_끝까지이어받는다', () async {
     handler = (o) {
-      if (o.path == _special) return ok([]);
+      final aux = _aux(o);
+      if (aux != null) return aux;
       final page = o.queryParameters['page'] as int;
       return eventsPage([eventJson(page + 1)], page: page, totalPages: 3);
     };
@@ -137,9 +144,7 @@ void main() {
   });
 
   test('refresh_페이지상한초과_일부만표시로표시한다', () async {
-    handler = (o) => o.path == _special
-        ? ok([])
-        : eventsPage([eventJson(1)], page: o.queryParameters['page'] as int, totalPages: 999);
+    handler = (o) => _aux(o) ?? eventsPage([eventJson(1)], page: o.queryParameters['page'] as int, totalPages: 999);
     final notifier = create();
     await until(() => !notifier.state.isLoading);
 
@@ -149,7 +154,7 @@ void main() {
   });
 
   test('refresh_특일조회실패_일정은표시하고특일은비운다', () async {
-    handler = (o) => o.path == _special ? errorBody(500, '외부 API 오류') : eventsPage([eventJson(1)]);
+    handler = (o) => o.path == _special ? errorBody(500, '외부 API 오류') : (_aux(o) ?? eventsPage([eventJson(1)]));
     final notifier = create();
     await until(() => !notifier.state.isLoading);
 
@@ -165,7 +170,7 @@ void main() {
             {'date': '2026-10-03', 'name': '개천절', 'kind': 'HOLIDAY', 'holiday': true},
             {'date': '2026-10-08', 'name': '한로', 'kind': 'SOLAR_TERM', 'holiday': false},
           ])
-        : eventsPage([]);
+        : (_aux(o) ?? eventsPage([]));
     final notifier = create();
     await until(() => !notifier.state.isLoading);
 
@@ -177,7 +182,7 @@ void main() {
   });
 
   test('refresh_일정조회실패_오류상태가된다', () async {
-    handler = (o) => o.path == _special ? ok([]) : errorBody(500, '서버 오류');
+    handler = (o) => _aux(o) ?? errorBody(500, '서버 오류');
     final notifier = create();
     await until(() => !notifier.state.isLoading);
 
@@ -188,7 +193,8 @@ void main() {
   test('changeMonth_이전달응답이늦게와도_현재달결과를덮어쓰지않는다', () async {
     final slowOctober = Completer<ResponseBody>();
     handler = (o) {
-      if (o.path == _special) return ok([]);
+      final aux = _aux(o);
+      if (aux != null) return aux;
       final from = o.queryParameters['from'] as String;
       if (from.startsWith('2026-09-27')) return slowOctober.future;
       return eventsPage([eventJson(11, title: '11월 일정')]);
@@ -238,7 +244,7 @@ void main() {
     test('create_입력_LocalDateTime본문으로보내고다시조회한다', () async {
       final notifier = create();
       await until(() => !notifier.state.isLoading);
-      handler = (o) => o.path == _special ? ok([]) : (o.method == 'POST' ? ok(eventJson(5)) : eventsPage([eventJson(5)]));
+      handler = (o) => _aux(o) ?? (o.method == 'POST' ? ok(eventJson(5)) : eventsPage([eventJson(5)]));
 
       await notifier.create(input);
 
@@ -261,7 +267,7 @@ void main() {
     test('update_종료없음_endAt을null로보낸다', () async {
       final notifier = create();
       await until(() => !notifier.state.isLoading);
-      handler = (o) => o.path == _special ? ok([]) : (o.method == 'PUT' ? ok(eventJson(1)) : eventsPage([eventJson(1)]));
+      handler = (o) => _aux(o) ?? (o.method == 'PUT' ? ok(eventJson(1)) : eventsPage([eventJson(1)]));
 
       await notifier.update(
         1,
@@ -277,7 +283,7 @@ void main() {
     test('delete_성공_삭제후다시조회한다', () async {
       final notifier = create();
       await until(() => !notifier.state.isLoading);
-      handler = (o) => o.path == _special ? ok([]) : (o.method == 'DELETE' ? ok(null) : eventsPage([]));
+      handler = (o) => _aux(o) ?? (o.method == 'DELETE' ? ok(null) : eventsPage([]));
 
       await notifier.delete(1);
 
@@ -289,9 +295,7 @@ void main() {
     test('create_서버오류_예외를던지고목록은그대로다', () async {
       final notifier = create();
       await until(() => !notifier.state.isLoading);
-      handler = (o) => o.path == _special
-          ? ok([])
-          : (o.method == 'POST' ? errorBody(400, '종료 시간은 시작 시간보다 빠를 수 없습니다.') : eventsPage([eventJson(1)]));
+      handler = (o) => _aux(o) ?? (o.method == 'POST' ? errorBody(400, '종료 시간은 시작 시간보다 빠를 수 없습니다.') : eventsPage([eventJson(1)]));
 
       await expectLater(
         notifier.create(input),
@@ -385,7 +389,7 @@ void main() {
     });
 
     test('refresh_구직활동가계부조회실패_일정은표시하고오버레이만비운다', () async {
-      handler = (o) => (o.path == jobs || o.path == daily) ? errorBody(500, '오류') : (o.path == _special ? ok([]) : eventsPage([eventJson(1)]));
+      handler = (o) => (o.path == jobs || o.path == daily) ? errorBody(500, '오류') : (_aux(o) ?? eventsPage([eventJson(1)]));
       final notifier = create();
       await until(() => !notifier.state.isLoading);
 
@@ -395,5 +399,38 @@ void main() {
       expect(state.money, isEmpty);
       notifier.dispose();
     });
+  });
+
+  test('refresh_부가정보응답형식오류_숨기지않고보고하며일정은표시한다', () async {
+    final reported = <FlutterErrorDetails>[];
+    final previous = FlutterError.onError;
+    FlutterError.onError = reported.add;
+    addTearDown(() => FlutterError.onError = previous);
+    // 백엔드에 앱이 모르는 상태값이 추가된 경우 등
+    handler = (o) => o.path == '/api/v1/job-applications'
+        ? ok([
+            {'id': 1, 'companyName': 'A', 'position': 'B', 'status': 'NEW_STATUS', 'appliedAt': '2026-10-01'},
+          ], meta: {'page': 0, 'size': 100, 'total': 1, 'totalPages': 1})
+        : (_aux(o) ?? eventsPage([eventJson(1)]));
+    final notifier = create();
+    await until(() => !notifier.state.isLoading);
+
+    expect(notifier.state.value!.events, hasLength(1));
+    expect(notifier.state.value!.jobApplications, isEmpty);
+    expect(reported, hasLength(1));
+    notifier.dispose();
+  });
+
+  test('refresh_부가정보통신오류_보고하지않는다', () async {
+    final reported = <FlutterErrorDetails>[];
+    final previous = FlutterError.onError;
+    FlutterError.onError = reported.add;
+    addTearDown(() => FlutterError.onError = previous);
+    handler = (o) => o.path == '/api/v1/job-applications' ? errorBody(500, '오류') : (_aux(o) ?? eventsPage([]));
+    final notifier = create();
+    await until(() => !notifier.state.isLoading);
+
+    expect(reported, isEmpty);
+    notifier.dispose();
   });
 }

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -318,8 +319,8 @@ class EventsNotifier extends StateNotifier<AsyncValue<CalendarMonthState>> {
         if (page + 1 >= totalPages) break;
       }
       return map;
-    } catch (_) {
-      return const {};
+    } catch (e, st) {
+      return _optional(e, st);
     }
   }
 
@@ -337,9 +338,23 @@ class EventsNotifier extends StateNotifier<AsyncValue<CalendarMonthState>> {
             expense: (json['expense'] as num).toInt(),
           ),
       };
-    } catch (_) {
-      return const {};
+    } catch (e, st) {
+      return _optional(e, st);
     }
+  }
+
+  /// 부가 정보(특일·구직활동·가계부) 조회 실패 처리: 통신 오류는 빈 값으로 넘기고,
+  /// 그 밖의 예외(응답 파싱 버그 등)는 숨기지 않고 보고한 뒤 빈 값으로 넘긴다
+  Map<String, T> _optional<T>(Object error, StackTrace stack) {
+    if (error is! DioException) {
+      FlutterError.reportError(FlutterErrorDetails(
+        exception: error,
+        stack: stack,
+        library: 'calendar',
+        context: ErrorDescription('캘린더 부가 정보 응답 처리 중'),
+      ));
+    }
+    return const {};
   }
 
   /// 특일은 부가 정보라 실패해도 일정 표시는 계속한다
@@ -355,8 +370,8 @@ class EventsNotifier extends StateNotifier<AsyncValue<CalendarMonthState>> {
         map.putIfAbsent(day.date, () => []).add(day);
       }
       return map;
-    } catch (_) {
-      return const {};
+    } catch (e, st) {
+      return _optional(e, st);
     }
   }
 }

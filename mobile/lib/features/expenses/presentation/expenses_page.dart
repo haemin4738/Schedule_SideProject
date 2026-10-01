@@ -11,13 +11,36 @@ const _incomeColor = Colors.blue;
 const _expenseColor = Colors.red;
 
 class ExpensesPage extends ConsumerStatefulWidget {
-  const ExpensesPage({super.key});
+  /// 캘린더에서 넘어올 때 보여줄 달 (없으면 이번 달)
+  final DateTime? initialMonth;
+
+  const ExpensesPage({super.key, this.initialMonth});
+
+  /// `?month=yyyy-MM` → 그 달 1일. 형식이 틀리면 null(이번 달)
+  static DateTime? parseMonth(String? value) {
+    final m = RegExp(r'^(\d{4})-(0[1-9]|1[0-2])$').firstMatch(value ?? '');
+    return m == null ? null : DateTime(int.parse(m[1]!), int.parse(m[2]!));
+  }
 
   @override
   ConsumerState<ExpensesPage> createState() => _ExpensesPageState();
 }
 
 class _ExpensesPageState extends ConsumerState<ExpensesPage> {
+  @override
+  void initState() {
+    super.initState();
+    final month = widget.initialMonth;
+    if (month == null) return;
+    // provider 는 이번 달로 만들어지므로 첫 프레임 뒤에 요청한 달로 옮긴다
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final current = ref.read(expensesProvider.notifier).month;
+      if (current.year == month.year && current.month == month.month) return;
+      _changeMonth(current, (month.year - current.year) * 12 + month.month - current.month);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final expensesAsync = ref.watch(expensesProvider);

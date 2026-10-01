@@ -242,8 +242,8 @@ void main() {
           child: MaterialApp.router(
             routerConfig: GoRouter(routes: [
               GoRoute(path: '/', builder: (_, _) => const CalendarPage()),
-              GoRoute(path: '/expenses', builder: (_, _) {
-                visited.add('/expenses');
+              GoRoute(path: '/expenses', builder: (_, state) {
+                visited.add(state.uri.toString());
                 return Scaffold(appBar: AppBar(), body: const Text('가계부 화면'));
               }),
               GoRoute(path: '/job-applications', builder: (_, _) {
@@ -281,7 +281,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.textContaining('지출 -12,345원'));
       await tester.pumpAndSettle();
-      expect(visited, ['/job-applications', '/expenses']);
+      // 그날이 속한 달의 가계부로 연다
+      expect(visited, ['/job-applications', '/expenses?month=${_month.year}-${_month.month.toString().padLeft(2, '0')}']);
     });
   });
 }
