@@ -52,7 +52,8 @@ export const getJobApplications = (params?: {
 
 // 백엔드 목록 size 상한
 const RANGE_PAGE_SIZE = 100
-// 비정상 응답으로 무한 반복하지 않도록 페이지 수 상한을 둔다
+// 비정상 응답으로 무한 반복하지 않도록 페이지 수 상한을 둔다.
+// 캘린더 한 화면(최대 42일)에 2000건을 넘길 일은 없다고 보고, 넘으면 앞의 2000건만 쓴다 (일정 목록과 같은 정책)
 const RANGE_MAX_PAGES = 20
 
 /** 지원일이 [from, to] (yyyy-MM-dd, 양끝 포함) 인 지원 내역을 모든 페이지에 걸쳐 가져온다 */

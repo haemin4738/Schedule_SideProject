@@ -461,7 +461,8 @@ describe('CalendarPage', () => {
       mockedRange.mockResolvedValue([summary()])
       renderPage()
 
-      expect(await screen.findByRole('status')).toHaveTextContent('가계부 합계를 불러오지 못했습니다.')
+      // status 영역은 항상 있으므로 내용이 채워질 때까지 기다린다
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('가계부 합계를 불러오지 못했습니다.'))
       expect(await screen.findByText('추석')).toBeInTheDocument()
       expect(await screen.findByText(JOB_TITLE)).toBeInTheDocument()
       expect(await screen.findByText('팀 회의')).toBeInTheDocument()

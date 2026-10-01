@@ -189,7 +189,14 @@ export default function ExpensesPage() {
     cancelPendingEdit()
     setMonth((m) => m.add(diff, 'month'))
     // 캘린더에서 넘어온 ?month= 가 남아 있으면 새로고침 시 그 달로 돌아가므로 지운다
-    if (searchParams.has('month')) setSearchParams({}, { replace: true })
+    if (searchParams.has('month'))
+      setSearchParams(
+        (params) => {
+          params.delete('month')
+          return params
+        },
+        { replace: true },
+      )
     setPage(0)
     setActionError(null)
   }

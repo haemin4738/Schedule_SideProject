@@ -99,7 +99,8 @@ export default function CalendarPage() {
     saveLayers(next)
   }
 
-  // 일정과 구직활동(지원일 종일 항목)을 한 달력에 함께 그린다
+  // 일정과 구직활동(지원일 종일 항목)을 한 달력에 함께 그린다.
+  // 일정은 토글을 꺼도 계속 불러온다(SSE 재조회 유지, 다시 켤 때 바로 보이게). SSE 는 일정 전용이라 오버레이는 화면 이동 시에만 갱신된다
   const calendarItems = useMemo(
     () => [
       ...(layers.events ? events : []),

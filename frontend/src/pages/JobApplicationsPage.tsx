@@ -112,7 +112,13 @@ export default function JobApplicationsPage() {
   useEffect(() => {
     if (!idParam) return
     // 새로고침·뒤로가기로 같은 폼이 다시 열리지 않게 주소에서 지운다
-    setSearchParams({}, { replace: true })
+    setSearchParams(
+      (params) => {
+        params.delete('id')
+        return params
+      },
+      { replace: true },
+    )
     const id = Number(idParam)
     if (!Number.isSafeInteger(id) || id <= 0) return
     // 주소에서 id 를 지우면 이 effect 가 다시 정리되므로 취소 플래그 대신 startEdit 의 요청 순번으로 늦은 응답을 거른다

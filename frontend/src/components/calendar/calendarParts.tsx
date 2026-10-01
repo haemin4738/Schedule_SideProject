@@ -1,6 +1,7 @@
 import dayjs from 'dayjs'
 import type { MouseEvent, TouchEvent } from 'react'
 import { Link } from 'react-router-dom'
+import type { DailyItem } from '@/api/expenses'
 import { useCalendarOverlay } from './calendarOverlayContext'
 import { dateKey, weekdayTextClass } from './calendarUtils'
 import type { DateHeaderProps, HeaderProps, NavigateAction, ToolbarProps, View } from 'react-big-calendar'
@@ -74,11 +75,65 @@ const won = (amount: number) => amount.toLocaleString('ko-KR')
 // react-big-calendar 는 document 의 mousedown/touchstart 로 칸 선택을 시작한다 → 링크를 누를 때 일정 만들기 창이 함께 뜨지 않게 막는다
 const stopSlotSelection = (e: MouseEvent | TouchEvent) => e.stopPropagation()
 
+const moneyLabel = (date: Date, money: DailyItem) =>
+  // 보이는 글자(-12,345 +50,000)를 이름에 그대로 포함한다 (WCAG 2.5.3 Label in Name)
+  `${dayjs(date).format('M월 D일')} 가계부${money.expense > 0 ? ` 지출 -${won(money.expense)}` : ''}${
+    money.income > 0 ? ` 수입 +${won(money.income)}` : ''
+  }`
+
+function MoneyText({ money }: { money: DailyItem }) {
+  return (
+    <>
+      {money.expense > 0 && <span className="text-red-500">-{won(money.expense)}</span>}
+      {money.expense > 0 && money.income > 0 && ' '}
+      {money.income > 0 && <span className="text-blue-500">+{won(money.income)}</span>}
+    </>
+  )
+}
+
 /**
- * 날짜 머리글 아래 덧붙이는 특일 이름·가계부 합계.
- * 주·일 보기 머리글은 react-big-calendar 가 드릴다운 button 으로 감싸므로 링크 없이 글자로만 보여준다 (button 안 링크 중첩 방지)
+ * 월간 칸 머리글 아래 특일(1줄)·가계부 합계(1줄).
+ * react-big-calendar 는 칸에 일정을 몇 줄 그릴지 처음 그릴 때 머리글 높이로 한 번만 잰다.
+ * 데이터가 늦게 와서 머리글이 커지면 넘친 일정이 '+N개 더보기' 없이 잘리므로, 내용과 상관없이 항상 두 줄 높이를 차지한다.
  */
-function DayOverlay({ date, linkExpenses }: { date: Date; linkExpenses: boolean }) {
+function MonthDayOverlay({ date }: { date: Date }) {
+  const { specialDays, expenses, showSpecialDayNames } = useCalendarOverlay()
+  const key = dateKey(date)
+  const names = showSpecialDayNames ? (specialDays.get(key) ?? []) : []
+  const money = expenses.get(key)
+  const line = 'block h-[15px] max-w-full truncate whitespace-nowrap'
+  return (
+    <div className="mt-0.5 flex flex-col items-center px-1 text-[11px] leading-[15px]">
+      <span className={line} title={names.length > 0 ? names.map((d) => d.name).join(', ') : undefined}>
+        {names.map((d, i) => (
+          <span key={`${d.kind}-${d.name}`}>
+            {i > 0 && <span className="text-gray-400"> · </span>}
+            <span className={d.holiday ? 'text-red-500' : 'text-gray-500'}>{d.name}</span>
+          </span>
+        ))}
+      </span>
+      {money ? (
+        <Link
+          to={`/expenses?month=${dayjs(date).format('YYYY-MM')}`}
+          onMouseDown={stopSlotSelection}
+          onTouchStart={stopSlotSelection}
+          aria-label={moneyLabel(date, money)}
+          className={`${line} rounded px-1 hover:bg-gray-100`}
+        >
+          <MoneyText money={money} />
+        </Link>
+      ) : (
+        <span className={line} aria-hidden="true" />
+      )}
+    </div>
+  )
+}
+
+/**
+ * 주·일 보기 머리글 아래 특일 이름·가계부 합계.
+ * 머리글을 react-big-calendar 가 드릴다운 button 으로 감싸므로 링크 없이 글자로만 보여준다 (button 안 링크 중첩 방지)
+ */
+function ColumnDayOverlay({ date }: { date: Date }) {
   const { specialDays, expenses, showSpecialDayNames } = useCalendarOverlay()
   const key = dateKey(date)
   const names = showSpecialDayNames ? (specialDays.get(key) ?? []) : []
@@ -95,24 +150,10 @@ function DayOverlay({ date, linkExpenses }: { date: Date; linkExpenses: boolean 
           {d.name}
         </span>
       ))}
-      {money && !linkExpenses && (
-        <span className="flex max-w-full flex-wrap justify-center gap-x-1">
-          {money.expense > 0 && <span className="text-red-500">-{won(money.expense)}</span>}
-          {money.income > 0 && <span className="text-blue-500">+{won(money.income)}</span>}
+      {money && (
+        <span className="max-w-full">
+          <MoneyText money={money} />
         </span>
-      )}
-      {money && linkExpenses && (
-        <Link
-          to={`/expenses?month=${dayjs(date).format('YYYY-MM')}`}
-          onMouseDown={stopSlotSelection}
-          onTouchStart={stopSlotSelection}
-          // 보이는 글자(-12,345 +50,000)를 이름에 그대로 포함한다 (WCAG 2.5.3 Label in Name)
-          aria-label={`${dayjs(date).format('M월 D일')} 가계부${money.expense > 0 ? ` 지출 -${won(money.expense)}` : ''}${money.income > 0 ? ` 수입 +${won(money.income)}` : ''}`}
-          className="flex max-w-full flex-wrap justify-center gap-x-1 rounded px-1 hover:bg-gray-100"
-        >
-          {money.expense > 0 && <span className="text-red-500">-{won(money.expense)}</span>}
-          {money.income > 0 && <span className="text-blue-500">+{won(money.income)}</span>}
-        </Link>
       )}
     </div>
   )
@@ -137,7 +178,7 @@ export function MonthDateHeader({ date, label, isOffRange, onDrillDown }: DateHe
       >
         {label}
       </button>
-      <DayOverlay date={date} linkExpenses />
+      <MonthDayOverlay date={date} />
     </div>
   )
 }
@@ -157,7 +198,7 @@ export function DayColumnHeader({ date }: HeaderProps) {
       >
         {d.date()}
       </span>
-      <DayOverlay date={date} linkExpenses={false} />
+      <ColumnDayOverlay date={date} />
     </div>
   )
 }
