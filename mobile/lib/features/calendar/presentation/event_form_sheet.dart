@@ -6,6 +6,8 @@ import 'package:mobile/features/calendar/provider/events_provider.dart';
 
 const _titleMaxLength = 200;
 const _locationMaxLength = 255;
+// 백엔드 EventRequest.description @Size(max = 10_000)
+const _descriptionMaxLength = 10000;
 final _dateLabel = DateFormat('yyyy-MM-dd');
 final _timeLabel = DateFormat('HH:mm');
 
@@ -280,6 +282,7 @@ class _EventFormSheetState extends ConsumerState<EventFormSheet> {
                 decoration: const InputDecoration(labelText: '설명 (선택)'),
                 minLines: 2,
                 maxLines: 5,
+                maxLength: _descriptionMaxLength,
               ),
               // 오류 문구가 바뀌면 스크린리더가 읽도록 live region 으로 둔다
               Semantics(

@@ -100,6 +100,7 @@ class _JobApplicationsPageState extends ConsumerState<JobApplicationsPage> {
         },
       ),
       floatingActionButton: FloatingActionButton(
+        tooltip: '지원 기록 추가',
         onPressed: () => _openForm(context, ref),
         child: const Icon(Icons.add),
       ),
@@ -269,12 +270,15 @@ class _JobApplicationFormSheetState
               TextFormField(
                 controller: _companyNameController,
                 decoration: const InputDecoration(labelText: '회사명'),
+                // 백엔드 JobApplicationRequest 길이 제한과 같다
+                maxLength: 200,
                 validator: (v) => (v == null || v.trim().isEmpty) ? '필수입니다.' : null,
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _positionController,
                 decoration: const InputDecoration(labelText: '지원 직무'),
+                maxLength: 200,
                 validator: (v) => (v == null || v.trim().isEmpty) ? '필수입니다.' : null,
               ),
               const SizedBox(height: 8),
@@ -303,12 +307,14 @@ class _JobApplicationFormSheetState
               TextFormField(
                 controller: _jobPostingUrlController,
                 decoration: const InputDecoration(labelText: '채용공고 URL (선택)'),
+                maxLength: 500,
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _memoController,
                 decoration: const InputDecoration(labelText: '메모 (선택)'),
                 maxLines: 3,
+                maxLength: 10000,
               ),
               const SizedBox(height: 16),
               SizedBox(

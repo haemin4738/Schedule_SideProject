@@ -29,6 +29,8 @@ interface Props {
 }
 
 const TITLE_MAX = 200
+// 백엔드 EventRequest.description @Size(max = 10_000)
+const DESCRIPTION_MAX = 10_000
 
 const inputClass =
   'w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 aria-[invalid=true]:border-red-400'
@@ -324,7 +326,13 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
             <label htmlFor="event-description" className="mb-1 block text-sm text-gray-600">
               설명
             </label>
-            <textarea id="event-description" {...register('description')} rows={3} className={inputClass} />
+            <textarea
+              id="event-description"
+              {...register('description')}
+              rows={3}
+              maxLength={DESCRIPTION_MAX}
+              className={inputClass}
+            />
           </div>
 
           <div className="mt-2 flex items-center justify-between gap-2">

@@ -302,4 +302,11 @@ describe('JobApplicationsPage', () => {
       expect(screen.getByRole('button', { name: '추가' })).toBeInTheDocument()
     })
   })
+
+  it('render_memoInput_hasBackendLengthLimit', async () => {
+    mockListResponse([])
+    renderPage()
+
+    expect(await screen.findByPlaceholderText('메모')).toHaveAttribute('maxLength', '10000')
+  })
 })
