@@ -367,4 +367,12 @@ describe('EventFormModal', () => {
     expect(title).toHaveFocus()
   })
 
+
+  it('render_textInputs_haveBackendLengthLimits', () => {
+    renderCreate()
+
+    expect(screen.getByLabelText('제목')).toHaveAttribute('maxLength', '200')
+    expect(screen.getByLabelText('장소')).toHaveAttribute('maxLength', '255')
+    expect(screen.getByLabelText('설명')).toHaveAttribute('maxLength', '10000')
+  })
 })

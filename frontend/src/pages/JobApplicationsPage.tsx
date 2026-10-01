@@ -237,7 +237,9 @@ export default function JobApplicationsPage() {
           </div>
           <div>
             <input
-              {...register('memo')}
+              {...register('memo', { maxLength: 10_000 })}
+              // 백엔드 JobApplicationRequest.memo @Size(max = 10_000)
+              maxLength={10_000}
               placeholder="메모"
               className="w-full rounded border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400"
             />

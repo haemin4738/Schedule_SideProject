@@ -350,4 +350,15 @@ void main() {
       expect(notifier.updated!.$2.color, isNull);
     });
   });
+
+  testWidgets('render_입력칸_백엔드길이제한과같다', (tester) async {
+    await tester.pumpWidget(_host(_RecordingNotifier()));
+    await _open(tester);
+
+    int? maxOf(String label) =>
+        tester.widget<TextField>(find.descendant(of: find.widgetWithText(TextFormField, label), matching: find.byType(TextField))).maxLength;
+    expect(maxOf('제목'), 200);
+    expect(maxOf('장소 (선택)'), 255);
+    expect(maxOf('설명 (선택)'), 10000);
+  });
 }

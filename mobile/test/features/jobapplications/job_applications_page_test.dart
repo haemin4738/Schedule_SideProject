@@ -82,4 +82,24 @@ void main() {
 
     expect(find.textContaining('오류:'), findsOneWidget);
   });
+
+  testWidgets('openForm_추가_입력칸이백엔드길이제한과같다', (tester) async {
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_wrap(const AsyncValue.data(
+      JobApplicationsState(items: [], page: 0, size: 20, total: 0, totalPages: 0),
+    )));
+
+    await tester.tap(find.byTooltip('지원 기록 추가'));
+    await tester.pumpAndSettle();
+
+    int? maxOf(String label) => tester
+        .widget<TextField>(find.descendant(of: find.widgetWithText(TextFormField, label), matching: find.byType(TextField)))
+        .maxLength;
+    expect(maxOf('회사명'), 200);
+    expect(maxOf('지원 직무'), 200);
+    expect(maxOf('채용공고 URL (선택)'), 500);
+    expect(maxOf('메모 (선택)'), 10000);
+  });
 }
