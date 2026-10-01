@@ -77,6 +77,46 @@ void main() {
     expect(state.eventsOn(DateTime(2026, 10, 6)), isEmpty);
   });
 
+  test('eventsOn_자정정각에끝나는일정_다음날에는표시하지않는다', () {
+    final state = CalendarMonthState(events: [
+      EventItem(id: 1, title: '야간', startAt: DateTime(2026, 10, 3, 23), endAt: DateTime(2026, 10, 4)),
+      EventItem(id: 2, title: '자정 순간', startAt: DateTime(2026, 10, 4), endAt: DateTime(2026, 10, 4)),
+    ]);
+
+    expect(state.eventsOn(DateTime(2026, 10, 3)).map((e) => e.id), [1]);
+    // 0분짜리 자정 일정은 그날에 보인다
+    expect(state.eventsOn(DateTime(2026, 10, 4)).map((e) => e.id), [2]);
+  });
+
+  test('refresh_보이는데이터가있으면_다시불러오는동안로딩으로바꾸지않고실패해도유지한다', () async {
+    final notifier = create();
+    await until(() => !notifier.state.isLoading);
+    final pending = Completer<ResponseBody>();
+    handler = (o) => o.path == _special ? ok([]) : pending.future;
+
+    final refreshing = notifier.refresh();
+    // 30초 주기 갱신 중에도 달력이 깜빡이지 않는다
+    expect(notifier.state.isLoading, isFalse);
+    expect(notifier.state.value!.events.single.id, 1);
+
+    pending.complete(errorBody(500, '일시 오류'));
+    await refreshing;
+    expect(notifier.state.value!.events.single.id, 1);
+    notifier.dispose();
+  });
+
+  test('goToToday_다른달에서_이번달로돌아와다시조회한다', () async {
+    final notifier = create(month: DateTime(2020, 1, 1));
+    await until(() => !notifier.state.isLoading);
+
+    await notifier.goToToday();
+
+    final now = DateTime.now();
+    expect(notifier.month, DateTime(now.year, now.month));
+    expect(adapter.requestsOf('GET', _events), hasLength(2));
+    notifier.dispose();
+  });
+
   test('refresh_여러페이지_끝까지이어받는다', () async {
     handler = (o) {
       if (o.path == _special) return ok([]);

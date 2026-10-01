@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/features/calendar/presentation/calendar_page.dart';
@@ -88,6 +89,33 @@ void main() {
     expect(find.text('종료 없는 일정'), findsOneWidget);
     expect(find.text('09:00'), findsOneWidget);
     expect(find.text('테스트공휴일'), findsNWidgets(2));
+  });
+
+  testWidgets('semantics_날짜칸_스크린리더탭으로선택된다', (tester) async {
+    _phone(tester);
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(_wrap(_FakeEventsNotifier(AsyncValue.data(_state()), _month)));
+
+    final cell = find.bySemanticsLabel(RegExp('${_month.month}월 10일 '));
+    final node = tester.getSemantics(cell);
+    expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+
+    tester.semantics.tap(find.semantics.byLabel(RegExp('${_month.month}월 10일 ')));
+    await tester.pump();
+
+    expect(find.text('팀 회의'), findsOneWidget);
+    handle.dispose();
+  });
+
+  testWidgets('onPressed_다음달_선택일이그달1일로바뀐다', (tester) async {
+    _phone(tester);
+    await tester.pumpWidget(_wrap(_FakeEventsNotifier(AsyncValue.data(_state()), _month)));
+
+    await tester.tap(find.byTooltip('다음 달'));
+    await tester.pump();
+
+    final next = DateTime(_month.year, _month.month + 1);
+    expect(find.text('${next.month}월 1일 ${['일', '월', '화', '수', '목', '금', '토'][next.weekday % 7]}요일'), findsOneWidget);
   });
 
   testWidgets('onTap_일정없는날_안내문구를보여준다', (tester) async {

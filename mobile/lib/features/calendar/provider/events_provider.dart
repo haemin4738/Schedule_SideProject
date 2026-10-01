@@ -30,12 +30,16 @@ class EventItem {
         allDay: json['allDay'] as bool? ?? false,
       );
 
-  /// [day] 하루와 겹치는지. 종료가 없으면 시작 시각을 종료로 본다 (백엔드 기간 조회와 같은 규칙)
+  /// [day] 하루와 겹치는지. 종료가 없으면 시작한 날에만 보인다.
+  /// 종료는 웹 캘린더처럼 경계 미포함 — 자정 정각에 끝나는 일정은 다음 날에 그리지 않는다
   bool occursOn(DateTime day) {
+    // 날짜 계산은 Duration 이 아니라 연·월·일로 한다 (서머타임 지역에서도 하루가 밀리지 않게)
     final dayStart = DateTime(day.year, day.month, day.day);
-    final dayEnd = dayStart.add(const Duration(days: 1));
-    final end = endAt ?? startAt;
-    return startAt.isBefore(dayEnd) && !end.isBefore(dayStart);
+    final dayEnd = DateTime(day.year, day.month, day.day + 1);
+    if (!startAt.isBefore(dayEnd)) return false;
+    final end = endAt;
+    if (end == null) return !startAt.isBefore(dayStart);
+    return end.isAfter(dayStart) || (end == startAt && !startAt.isBefore(dayStart));
   }
 }
 
@@ -57,7 +61,7 @@ class SpecialDay {
 /// 월간 달력에 보이는 첫날(그 달 1일이 속한 주의 일요일)
 DateTime gridStart(DateTime month) {
   final first = DateTime(month.year, month.month);
-  return first.subtract(Duration(days: first.weekday % 7));
+  return DateTime(first.year, first.month, 1 - first.weekday % 7);
 }
 
 /// 월간 달력은 항상 6주(42칸)를 보여준다
@@ -109,7 +113,7 @@ class EventsNotifier extends StateNotifier<AsyncValue<CalendarMonthState>> {
   Future<void> refresh() async {
     final seq = ++_seq;
     final from = gridStart(month);
-    final to = from.add(const Duration(days: gridDays)).subtract(const Duration(seconds: 1));
+    final to = DateTime(from.year, from.month, from.day + gridDays).subtract(const Duration(seconds: 1));
     // 이미 보이는 데이터가 있으면 새로 고치는 동안에도 유지한다 (30초 주기 갱신 시 깜빡임 방지)
     if (!state.hasValue) state = const AsyncValue.loading();
     try {
@@ -123,6 +127,8 @@ class EventsNotifier extends StateNotifier<AsyncValue<CalendarMonthState>> {
       ));
     } catch (e, st) {
       if (!mounted || seq != _seq) return;
+      // 이미 보이는 달력이 있으면(30초 주기 갱신이 한 번 실패한 경우 등) 오류 화면으로 바꾸지 않고 그대로 둔다
+      if (state.valueOrNull != null) return;
       state = AsyncValue.error(e, st);
     }
   }

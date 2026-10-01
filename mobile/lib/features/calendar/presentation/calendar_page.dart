@@ -290,6 +290,8 @@ class _DayCell extends StatelessWidget {
       selected: selected,
       label: label,
       excludeSemantics: true,
+      // 하위 InkWell 의 탭 동작이 제외되므로 스크린리더용 탭을 직접 연결한다
+      onTap: onTap,
       child: InkWell(
         onTap: onTap,
         child: Opacity(
