@@ -29,10 +29,10 @@ public class ExpenseRepositoryImpl implements ExpenseRepository {
     @Override
     public Page<Expense> findByUserIdAndFilter(Long userId, LocalDate from, LocalDate to,
                                                ExpenseType type, Long categoryId, Pageable pageable) {
-        // 정렬은 쿼리에 고정(transactionDate DESC, id DESC) — 호출자의 Sort는 무시해 중복/충돌 방지
+        // 정렬은 쿼리에 고정(transactionDate DESC, id DESC) — 호출자의 Sort는 무시해 중복/충돌 방지 (unpaged 여도 Sort 를 버린다)
         Pageable unsorted = pageable.isPaged()
                 ? PageRequest.of(pageable.getPageNumber(), pageable.getPageSize())
-                : pageable;
+                : Pageable.unpaged();
         return jpa.findByUserIdAndFilter(userId, from, to, type, categoryId, unsorted);
     }
 

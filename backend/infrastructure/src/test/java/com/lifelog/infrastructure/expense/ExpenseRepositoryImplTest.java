@@ -22,6 +22,7 @@ import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.test.context.ActiveProfiles;
@@ -247,6 +248,19 @@ class ExpenseRepositoryImplTest {
 
         Page<Expense> page = expenseRepository.findByUserIdAndFilter(user1.getId(),
                 null, null, null, null, PageRequest.of(0, 20, Sort.by("amount").ascending()));
+
+        assertThat(page.getContent()).extracting(Expense::getId).containsExactly(newer.getId(), older.getId());
+    }
+
+    @Test
+    void findByUserIdAndFilter_whenUnpagedWithSort_ignoresSortAndReturnsAllInFixedOrder() {
+        Expense older = save(user1, food, 1_000L, LocalDate.of(2026, 9, 1));
+        Expense newer = save(user1, food, 2_000L, LocalDate.of(2026, 9, 2));
+        flushAndClear();
+
+        // 쿼리에 없는 속성 — Sort 가 버려지지 않으면 ORDER BY 에 덧붙어 쿼리 해석 단계에서 실패한다
+        Page<Expense> page = expenseRepository.findByUserIdAndFilter(user1.getId(),
+                null, null, null, null, Pageable.unpaged(Sort.by("notExistingProperty")));
 
         assertThat(page.getContent()).extracting(Expense::getId).containsExactly(newer.getId(), older.getId());
     }

@@ -122,7 +122,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<ApiResponse<Void>> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException e) {
-        // 지원하는 형식을 Accept 헤더(PATCH 면 Accept-Patch)로 그대로 돌려준다
+        // 지원하는 형식을 Accept 헤더로 돌려준다 (PATCH 요청이면 Accept-Patch 도 함께)
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
                 .headers(e.getHeaders())
                 .body(ApiResponse.error("지원하지 않는 Content-Type 입니다. application/json 으로 보내 주세요."));

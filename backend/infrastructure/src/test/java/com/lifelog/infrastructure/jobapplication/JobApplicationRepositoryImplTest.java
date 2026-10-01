@@ -274,7 +274,8 @@ class JobApplicationRepositoryImplTest {
         entityManager.clear();
 
         Page<JobApplication> page = jobApplicationRepository.findByUserIdAndFilter(user1.getId(), null,
-                null, null, Pageable.unpaged(Sort.by("appliedAt").ascending()));
+                // 쿼리에 없는 속성 — Sort 가 버려지지 않으면 ORDER BY 에 덧붙어 쿼리 해석 단계에서 실패한다
+                null, null, Pageable.unpaged(Sort.by("notExistingProperty")));
 
         assertThat(page.getContent()).extracting(JobApplication::getId)
                 .containsExactly(late.getId(), early.getId());
