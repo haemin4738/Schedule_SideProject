@@ -1142,9 +1142,6 @@ paths:
                 $ref: '#/components/schemas/ApiResponse_Error'
 
 
-# ------------------------------------------------------------------
-# COMPONENTS
-# ------------------------------------------------------------------
   # ================================================================
   # SSE
   # ================================================================
@@ -1161,7 +1158,7 @@ paths:
         - name: token
           in: query
           required: false
-          description: access token (Authorization 헤더를 못 쓰는 EventSource 용)
+          description: access token (Authorization 헤더를 못 쓰는 EventSource 용). 헤더가 없으면 필수이며 없거나 만료되면 401. URL 에 실리므로 서버·프록시 접근 로그에 남을 수 있다
           schema:
             type: string
       responses:
@@ -1181,6 +1178,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse_Error'
 
+# ------------------------------------------------------------------
+# COMPONENTS
+# ------------------------------------------------------------------
 components:
 
   securitySchemes:
