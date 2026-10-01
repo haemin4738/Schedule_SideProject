@@ -328,4 +328,72 @@ void main() {
     expect(resolveEventColor(null, null), EventCategory.PERSONAL.defaultColor);
     expect(resolveEventColor('#039be5', null), const Color(0xFF039BE5));
   });
+
+  group('구직활동·가계부 오버레이', () {
+    const jobs = '/api/v1/job-applications';
+    const daily = '/api/v1/expenses/summary/daily';
+
+    Map<String, Object?> jobJson(int id, String appliedAt) => {
+          'id': id,
+          'companyName': '회사$id',
+          'position': '백엔드',
+          'status': 'APPLIED',
+          'appliedAt': appliedAt,
+        };
+
+    ResponseBody overlayHandler(RequestOptions o) {
+      if (o.path == _special) return ok([]);
+      if (o.path == jobs) {
+        final page = o.queryParameters['page'] as int;
+        return ok([jobJson(page + 1, '2026-10-0${page + 1}')],
+            meta: {'page': page, 'size': 100, 'total': 2, 'totalPages': 2});
+      }
+      if (o.path == daily) {
+        return ok({
+          'from': '2026-09-27',
+          'to': '2026-11-07',
+          'totalIncome': 50000,
+          'totalExpense': 12000,
+          'net': 38000,
+          'days': [
+            {'date': '2026-10-07', 'income': 50000, 'expense': 12000, 'net': 38000},
+          ],
+        });
+      }
+      return eventsPage([]);
+    }
+
+    test('refresh_구직활동과가계부_보이는기간으로조회해날짜별로묶는다', () async {
+      handler = overlayHandler;
+      final notifier = create();
+      await until(() => !notifier.state.isLoading);
+
+      final jobQuery = adapter.requestsOf('GET', jobs).first.queryParameters;
+      expect(jobQuery['from'], '2026-09-27');
+      expect(jobQuery['to'], '2026-11-07');
+      expect(jobQuery['size'], 100);
+      expect(adapter.requestsOf('GET', jobs), hasLength(2));
+      expect(adapter.requestsOf('GET', daily).single.queryParameters, {'from': '2026-09-27', 'to': '2026-11-07'});
+
+      final state = notifier.state.value!;
+      expect(state.jobApplicationsOn(DateTime(2026, 10, 1)).single.companyName, '회사1');
+      expect(state.jobApplicationsOn(DateTime(2026, 10, 2)).single.companyName, '회사2');
+      expect(state.moneyOn(DateTime(2026, 10, 7))!.expense, 12000);
+      expect(state.moneyOn(DateTime(2026, 10, 7))!.income, 50000);
+      expect(state.moneyOn(DateTime(2026, 10, 8)), isNull);
+      notifier.dispose();
+    });
+
+    test('refresh_구직활동가계부조회실패_일정은표시하고오버레이만비운다', () async {
+      handler = (o) => (o.path == jobs || o.path == daily) ? errorBody(500, '오류') : (o.path == _special ? ok([]) : eventsPage([eventJson(1)]));
+      final notifier = create();
+      await until(() => !notifier.state.isLoading);
+
+      final state = notifier.state.value!;
+      expect(state.events, hasLength(1));
+      expect(state.jobApplications, isEmpty);
+      expect(state.money, isEmpty);
+      notifier.dispose();
+    });
+  });
 }

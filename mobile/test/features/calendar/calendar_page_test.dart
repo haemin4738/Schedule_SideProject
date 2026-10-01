@@ -3,7 +3,10 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/features/calendar/presentation/calendar_page.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mobile/features/calendar/provider/events_provider.dart';
+import 'package:mobile/features/jobapplications/job_application_status.dart';
+import 'package:mobile/features/jobapplications/provider/job_applications_provider.dart';
 
 /// 네트워크 없이 상태만 주입하는 fake. 달 이동은 기록만 한다
 class _FakeEventsNotifier extends EventsNotifier {
@@ -215,5 +218,70 @@ void main() {
 
     expect(find.text('일정 수정'), findsNothing);
     expect(find.text('요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.'), findsOneWidget);
+  });
+
+  group('구직활동·가계부', () {
+    CalendarMonthState overlayState() => CalendarMonthState(
+          events: const [],
+          jobApplications: {
+            _key(_day10): [
+              const JobApplicationItem(
+                id: 3,
+                companyName: '라이프로그',
+                position: '백엔드',
+                status: JobApplicationStatus.APPLIED,
+                appliedAt: '',
+              ),
+            ],
+          },
+          money: {_key(_day10): const DailyMoney(income: 50000, expense: 12345)},
+        );
+
+    Widget routed(_FakeEventsNotifier notifier, List<String> visited) => ProviderScope(
+          overrides: [eventsProvider.overrideWith((ref) => notifier)],
+          child: MaterialApp.router(
+            routerConfig: GoRouter(routes: [
+              GoRoute(path: '/', builder: (_, _) => const CalendarPage()),
+              GoRoute(path: '/expenses', builder: (_, _) {
+                visited.add('/expenses');
+                return Scaffold(appBar: AppBar(), body: const Text('가계부 화면'));
+              }),
+              GoRoute(path: '/job-applications', builder: (_, _) {
+                visited.add('/job-applications');
+                return Scaffold(appBar: AppBar(), body: const Text('구직활동 화면'));
+              }),
+            ]),
+          ),
+        );
+
+    testWidgets('render_날짜칸_구직활동개수를접근성이름에넣는다', (tester) async {
+      _phone(tester);
+      await tester.pumpWidget(_wrap(_FakeEventsNotifier(AsyncValue.data(overlayState()), _month)));
+
+      expect(find.bySemanticsLabel(RegExp('${_month.month}월 10일 .요일, 구직활동 1개')), findsOneWidget);
+    });
+
+    testWidgets('onTap_날짜_가계부합계와구직활동을보여주고누르면각화면으로이동한다', (tester) async {
+      _phone(tester);
+      final visited = <String>[];
+      await tester.pumpWidget(routed(_FakeEventsNotifier(AsyncValue.data(overlayState()), _month), visited));
+      await tester.tap(find.bySemanticsLabel(RegExp('${_month.month}월 10일 ')));
+      await tester.pump();
+
+      expect(find.textContaining('지출 -12,345원'), findsOneWidget);
+      expect(find.textContaining('수입 +50,000원'), findsOneWidget);
+      expect(find.text('라이프로그 · 백엔드'), findsOneWidget);
+      expect(find.text('구직활동 · ${JobApplicationStatus.APPLIED.toKoreanLabel()}'), findsOneWidget);
+
+      await tester.tap(find.text('라이프로그 · 백엔드'));
+      await tester.pumpAndSettle();
+      expect(visited, ['/job-applications']);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('지출 -12,345원'));
+      await tester.pumpAndSettle();
+      expect(visited, ['/job-applications', '/expenses']);
+    });
   });
 }

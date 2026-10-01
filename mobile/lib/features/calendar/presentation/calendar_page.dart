@@ -7,8 +7,13 @@ import 'package:intl/intl.dart';
 import 'package:mobile/features/auth/provider/auth_provider.dart';
 import 'package:mobile/features/calendar/presentation/event_form_sheet.dart';
 import 'package:mobile/features/calendar/provider/events_provider.dart';
+import 'package:mobile/features/expenses/expense_type.dart';
+import 'package:mobile/features/jobapplications/job_application_status.dart';
 
 const _weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+
+/// 구직활동 표시 색 (웹 JOB_APPLICATION_COLOR 와 같은 보라)
+const jobApplicationColor = Color(0xFF8E24AA);
 final _timeFormat = DateFormat('HH:mm');
 
 bool _sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
@@ -319,6 +324,7 @@ class _DayCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final events = data.eventsOn(day);
+    final jobs = data.jobApplicationsOn(day);
     final specials = data.specialDaysOn(day);
     final holidays = specials.where((d) => d.holiday).map((d) => d.name).toList();
     final isToday = _sameDay(day, DateTime.now());
@@ -327,6 +333,7 @@ class _DayCell extends StatelessWidget {
       '${day.month}월 ${day.day}일 ${_weekdays[day.weekday % 7]}요일',
       ...holidays,
       if (events.isNotEmpty) '일정 ${events.length}개',
+      if (jobs.isNotEmpty) '구직활동 ${jobs.length}개',
     ].join(', ');
 
     return Semantics(
@@ -376,17 +383,21 @@ class _DayCell extends StatelessWidget {
                 Expanded(
                   child: Align(
                     alignment: Alignment.bottomCenter,
-                    child: events.isEmpty
+                    // 일정 점(최대 3개) 뒤에 구직활동 점 하나
+                    child: events.isEmpty && jobs.isEmpty
                         ? null
                         : Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              for (var i = 0; i < events.length && i < 3; i++)
+                              for (final color in [
+                                for (var i = 0; i < events.length && i < 3; i++) events[i].displayColor,
+                                if (jobs.isNotEmpty) jobApplicationColor,
+                              ])
                                 Container(
                                   width: 5,
                                   height: 5,
                                   margin: const EdgeInsets.symmetric(horizontal: 1, vertical: 2),
-                                  decoration: BoxDecoration(color: events[i].displayColor, shape: BoxShape.circle),
+                                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
                                 ),
                             ],
                           ),
@@ -413,6 +424,8 @@ class _DayDetail extends StatelessWidget {
   Widget build(BuildContext context) {
     final events = data.eventsOn(day);
     final specials = data.specialDaysOn(day);
+    final jobs = data.jobApplicationsOn(day);
+    final money = data.moneyOn(day);
     return ListView(
       // 마지막 일정이 '일정 추가' 버튼에 가리지 않게 아래 여백을 둔다
       padding: const EdgeInsets.only(bottom: 80),
@@ -425,6 +438,29 @@ class _DayDetail extends StatelessWidget {
           ),
           subtitle: specials.isEmpty ? null : Text(specials.map((d) => d.name).join(' · ')),
         ),
+        if (money != null)
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.account_balance_wallet_outlined, size: 20),
+            title: Text.rich(TextSpan(children: [
+              if (money.expense > 0)
+                TextSpan(text: '지출 -${formatAmount(money.expense)}', style: TextStyle(color: Colors.red.shade600)),
+              if (money.expense > 0 && money.income > 0) const TextSpan(text: '  '),
+              if (money.income > 0)
+                TextSpan(text: '수입 +${formatAmount(money.income)}', style: TextStyle(color: Colors.blue.shade600)),
+            ])),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/expenses'),
+          ),
+        for (final job in jobs)
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.work_outline, size: 20, color: jobApplicationColor),
+            title: Text('${job.companyName} · ${job.position}'),
+            subtitle: Text('구직활동 · ${job.status.toKoreanLabel()}'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/job-applications'),
+          ),
         if (events.isEmpty)
           const Padding(
             padding: EdgeInsets.all(16),

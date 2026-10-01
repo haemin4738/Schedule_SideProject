@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/core/network/dio_client.dart';
 import 'package:mobile/features/calendar/event_category.dart';
+import 'package:mobile/features/jobapplications/provider/job_applications_provider.dart';
 
 final _dateTime = DateFormat("yyyy-MM-dd'T'HH:mm:ss");
 final _date = DateFormat('yyyy-MM-dd');
@@ -154,8 +155,22 @@ DateTime gridStart(DateTime month) {
 /// 월간 달력은 항상 6주(42칸)를 보여준다
 const gridDays = 42;
 
+/// 가계부 하루 합계 (백엔드 DailySummaryResponse.DailyItem). 내역이 있는 날만 온다
+class DailyMoney {
+  final int income;
+  final int expense;
+
+  const DailyMoney({required this.income, required this.expense});
+}
+
 class CalendarMonthState {
   final List<EventItem> events;
+
+  /// yyyy-MM-dd → 그날 지원한 구직활동. 불러오지 못하면 비어 있다
+  final Map<String, List<JobApplicationItem>> jobApplications;
+
+  /// yyyy-MM-dd → 그날 가계부 합계. 불러오지 못하면 비어 있다
+  final Map<String, DailyMoney> money;
 
   /// yyyy-MM-dd → 그날의 특일. 불러오지 못하면 비어 있다 (일정 표시는 계속한다)
   final Map<String, List<SpecialDay>> specialDays;
@@ -166,8 +181,14 @@ class CalendarMonthState {
   const CalendarMonthState({
     required this.events,
     this.specialDays = const {},
+    this.jobApplications = const {},
+    this.money = const {},
     this.truncated = false,
   });
+
+  List<JobApplicationItem> jobApplicationsOn(DateTime day) => jobApplications[_date.format(day)] ?? const [];
+
+  DailyMoney? moneyOn(DateTime day) => money[_date.format(day)];
 
   List<EventItem> eventsOn(DateTime day) => events.where((e) => e.occursOn(day)).toList();
 
@@ -204,12 +225,19 @@ class EventsNotifier extends StateNotifier<AsyncValue<CalendarMonthState>> {
     // 이미 보이는 데이터가 있으면 새로 고치는 동안에도 유지한다 (30초 주기 갱신 시 깜빡임 방지)
     if (!state.hasValue) state = const AsyncValue.loading();
     try {
-      final results = await Future.wait([_fetchEvents(from, to), _fetchSpecialDays(from, to)]);
+      final results = await Future.wait([
+        _fetchEvents(from, to),
+        _fetchSpecialDays(from, to),
+        _fetchJobApplications(from, to),
+        _fetchMoney(from, to),
+      ]);
       if (!mounted || seq != _seq) return;
       final (events, truncated) = results[0] as (List<EventItem>, bool);
       state = AsyncValue.data(CalendarMonthState(
         events: events,
         specialDays: results[1] as Map<String, List<SpecialDay>>,
+        jobApplications: results[2] as Map<String, List<JobApplicationItem>>,
+        money: results[3] as Map<String, DailyMoney>,
         truncated: truncated,
       ));
     } catch (e, st) {
@@ -269,6 +297,49 @@ class EventsNotifier extends StateNotifier<AsyncValue<CalendarMonthState>> {
   Future<void> delete(int id) async {
     await _dio.delete('/api/v1/events/$id');
     if (mounted) await refresh();
+  }
+
+  /// 지원일이 보이는 기간인 구직활동 (부가 정보 — 실패해도 일정 표시는 계속한다)
+  Future<Map<String, List<JobApplicationItem>>> _fetchJobApplications(DateTime from, DateTime to) async {
+    try {
+      final map = <String, List<JobApplicationItem>>{};
+      for (var page = 0; page < _maxPages; page++) {
+        final res = await _dio.get('/api/v1/job-applications', queryParameters: {
+          'from': _date.format(from),
+          'to': _date.format(to),
+          'page': page,
+          'size': _pageSize,
+        });
+        for (final json in res.data['data'] as List) {
+          final item = JobApplicationItem.fromJson(json as Map<String, dynamic>);
+          map.putIfAbsent(item.appliedAt, () => []).add(item);
+        }
+        final totalPages = (res.data['meta']?['totalPages'] as num?)?.toInt() ?? 0;
+        if (page + 1 >= totalPages) break;
+      }
+      return map;
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// 가계부 일별 합계 (부가 정보 — 실패해도 일정 표시는 계속한다)
+  Future<Map<String, DailyMoney>> _fetchMoney(DateTime from, DateTime to) async {
+    try {
+      final res = await _dio.get('/api/v1/expenses/summary/daily', queryParameters: {
+        'from': _date.format(from),
+        'to': _date.format(to),
+      });
+      return {
+        for (final json in (res.data['data']['days'] as List).cast<Map<String, dynamic>>())
+          json['date'] as String: DailyMoney(
+            income: (json['income'] as num).toInt(),
+            expense: (json['expense'] as num).toInt(),
+          ),
+      };
+    } catch (_) {
+      return const {};
+    }
   }
 
   /// 특일은 부가 정보라 실패해도 일정 표시는 계속한다
