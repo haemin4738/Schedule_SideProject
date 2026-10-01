@@ -258,6 +258,19 @@ describe('CalendarPage', () => {
     expect(screen.queryByText('팀 회의')).not.toBeInTheDocument()
   })
 
+  it('load_overPageLimit_showsTruncatedNotice', async () => {
+    mockedRange.mockImplementation(async (_from, _to, onTruncated) => {
+      onTruncated?.()
+      return [summary()]
+    })
+    renderPage()
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('일정이 너무 많아 앞의 2,000개만 표시합니다.'),
+    )
+    expect(screen.getByText('팀 회의')).toBeInTheDocument()
+  })
+
   it('load_fails_showsError', async () => {
     mockedRange.mockRejectedValue({ response: { data: { error: '서버 오류' } } })
     renderPage()
