@@ -1,5 +1,4 @@
-// 백엔드 com.lifelog.domain.jobapplication.JobApplicationStatus 와 반드시 동기화되어야 함.
-// docs/api-spec.yaml (OpenAPI 스펙)에는 job-applications 도메인이 아직 반영되어 있지 않음.
+// 백엔드 com.lifelog.domain.jobapplication.JobApplicationStatus 및 docs/api-spec.yaml 의 JobApplicationStatus 와 반드시 동기화되어야 함.
 export type JobApplicationStatus =
   | 'APPLIED'
   | 'DOCUMENT_PASS'

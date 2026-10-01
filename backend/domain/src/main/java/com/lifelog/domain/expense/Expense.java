@@ -82,6 +82,8 @@ public class Expense {
     public void update(ExpenseCategory category, ExpenseType type, Long amount,
                        LocalDate transactionDate, String description, String memo) {
         validate(category, type, amount);
+        // @PreUpdate 는 flush 때 실행돼 수정 응답에 이전 updatedAt 이 나가므로 여기서도 갱신한다
+        this.updatedAt = LocalDateTime.now();
         this.category = category;
         this.type = type;
         this.amount = amount;

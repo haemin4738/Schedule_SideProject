@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -132,5 +133,26 @@ class ExpenseTest {
 
         assertThat(food.getName()).isEqualTo("외식");
         assertThat(food.getType()).isEqualTo(ExpenseType.EXPENSE);
+    }
+
+    @Test
+    void update_whenCalled_refreshesUpdatedAtBeforeFlush() {
+        Expense expense = Expense.create(user, food, ExpenseType.EXPENSE, 12_000L,
+                LocalDate.of(2026, 9, 1), "점심", null);
+        LocalDateTime before = java.time.LocalDateTime.now();
+
+        expense.update(food, ExpenseType.EXPENSE, 15_000L, LocalDate.of(2026, 9, 2), "저녁", null);
+
+        // 수정 응답에 쓰이는 updatedAt 이 flush(@PreUpdate) 전에도 갱신돼 있어야 한다
+        assertThat(expense.getUpdatedAt()).isAfterOrEqualTo(before);
+    }
+
+    @Test
+    void category_rename_refreshesUpdatedAtBeforeFlush() {
+        LocalDateTime before = java.time.LocalDateTime.now();
+
+        food.rename("외식");
+
+        assertThat(food.getUpdatedAt()).isAfterOrEqualTo(before);
     }
 }

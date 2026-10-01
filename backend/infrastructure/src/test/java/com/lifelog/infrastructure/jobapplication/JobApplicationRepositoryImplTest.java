@@ -265,6 +265,22 @@ class JobApplicationRepositoryImplTest {
     }
 
     @Test
+    void findByUserIdAndFilter_whenUnpagedWithSort_ignoresSortAndReturnsAllInFixedOrder() {
+        JobApplication early = jobApplicationRepository.save(
+                newJobApplication(user1, "A", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 1)));
+        JobApplication late = jobApplicationRepository.save(
+                newJobApplication(user1, "B", JobApplicationStatus.APPLIED, LocalDate.of(2026, 9, 20)));
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<JobApplication> page = jobApplicationRepository.findByUserIdAndFilter(user1.getId(), null,
+                null, null, Pageable.unpaged(Sort.by("appliedAt").ascending()));
+
+        assertThat(page.getContent()).extracting(JobApplication::getId)
+                .containsExactly(late.getId(), early.getId());
+    }
+
+    @Test
     void findByUserIdAndFilter_whenPagedAcrossTiedDates_returnsEachRowExactlyOnce() {
         for (int i = 0; i < 5; i++) {
             jobApplicationRepository.save(

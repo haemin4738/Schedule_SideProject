@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -36,6 +38,12 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/method-not-supported")
         void methodNotSupported() throws HttpRequestMethodNotSupportedException {
             throw new HttpRequestMethodNotSupportedException("DELETE", List.of("GET", "POST"));
+        }
+
+        @GetMapping("/test/media-type-not-supported")
+        void mediaTypeNotSupported() throws HttpMediaTypeNotSupportedException {
+            throw new HttpMediaTypeNotSupportedException(MediaType.TEXT_PLAIN, List.of(MediaType.APPLICATION_JSON),
+                    HttpMethod.POST);
         }
 
         @GetMapping("/test/data-exception")
@@ -83,6 +91,15 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error").value("요청한 경로를 찾을 수 없습니다."));
+    }
+
+    @Test
+    void handleMediaTypeNotSupported_whenContentTypeUnsupported_returns415WithAcceptHeader() throws Exception {
+        mockMvc.perform(get("/test/media-type-not-supported"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(header().string("Accept", "application/json"))
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("지원하지 않는 Content-Type 입니다. application/json 으로 보내 주세요."));
     }
 
     @Test

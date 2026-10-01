@@ -25,10 +25,10 @@ public class JobApplicationRepositoryImpl implements JobApplicationRepository {
     @Override
     public Page<JobApplication> findByUserIdAndFilter(Long userId, JobApplicationStatus status,
                                                       LocalDate from, LocalDate to, Pageable pageable) {
-        // 정렬은 쿼리에 고정(appliedAt DESC, id DESC) — 호출자의 Sort는 무시해 중복/충돌 방지
+        // 정렬은 쿼리에 고정(appliedAt DESC, id DESC) — 호출자의 Sort는 무시해 중복/충돌 방지 (unpaged 여도 Sort 를 버린다)
         Pageable unsorted = pageable.isPaged()
                 ? PageRequest.of(pageable.getPageNumber(), pageable.getPageSize())
-                : pageable;
+                : Pageable.unpaged();
         return jpa.findByUserIdAndFilter(userId, status, from, to, unsorted);
     }
 }
