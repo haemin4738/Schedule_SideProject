@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -117,6 +118,14 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
                 .headers(e.getHeaders())
                 .body(ApiResponse.error("지원하지 않는 HTTP 메서드입니다."));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException e) {
+        // 지원하는 형식을 Accept 헤더로 돌려준다 (PATCH 요청이면 Accept-Patch 도 함께)
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .headers(e.getHeaders())
+                .body(ApiResponse.error("지원하지 않는 Content-Type 입니다. application/json 으로 보내 주세요."));
     }
 
     @ExceptionHandler(Exception.class)

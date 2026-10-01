@@ -13,7 +13,7 @@
 ## 기술 스택
 
 - **언어**: Java 21
-- **프레임워크**: Spring Boot 3.3.5
+- **프레임워크**: Spring Boot 4.1.1
 - **빌드 도구**: Gradle (멀티모듈 — api / domain / infrastructure)
 - **DB**: MySQL 8, Redis 7
 - **인증**: JWT (access 15분 / refresh 비활성 15일·최대 30일, 회전) + OAuth2
