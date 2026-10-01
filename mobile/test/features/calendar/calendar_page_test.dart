@@ -21,6 +21,15 @@ class _FakeEventsNotifier extends EventsNotifier {
   Future<void> changeMonth(int delta) async {
     month = DateTime(month.year, month.month + delta);
   }
+
+  bool failDetail = false;
+
+  @override
+  Future<EventDetail> getDetail(int id) async {
+    if (failDetail) throw Exception('x');
+    final item = state.value!.events.firstWhere((e) => e.id == id);
+    return EventDetail(id: item.id, title: item.title, startAt: item.startAt, endAt: item.endAt, description: '상세 설명');
+  }
 }
 
 final _now = DateTime.now();
@@ -168,5 +177,43 @@ void main() {
     )));
 
     expect(find.text('일정이 너무 많아 일부만 표시합니다.'), findsOneWidget);
+  });
+
+  testWidgets('onPressed_일정추가_새일정시트를연다', (tester) async {
+    _phone(tester);
+    await tester.pumpWidget(_wrap(_FakeEventsNotifier(AsyncValue.data(_state()), _month)));
+
+    await tester.tap(find.byTooltip('일정 추가'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('새 일정'), findsOneWidget);
+  });
+
+  testWidgets('onTap_일정을누르면_단건조회후수정시트를연다', (tester) async {
+    _phone(tester);
+    await tester.pumpWidget(_wrap(_FakeEventsNotifier(AsyncValue.data(_state()), _month)));
+    await tester.tap(find.bySemanticsLabel(RegExp('${_month.month}월 10일 ')));
+    await tester.pump();
+
+    await tester.tap(find.text('팀 회의'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('일정 수정'), findsOneWidget);
+    // 목록에 없는 설명이 단건 조회로 채워진다
+    expect(find.text('상세 설명'), findsOneWidget);
+  });
+
+  testWidgets('onTap_단건조회실패_안내하고시트를열지않는다', (tester) async {
+    _phone(tester);
+    final notifier = _FakeEventsNotifier(AsyncValue.data(_state()), _month)..failDetail = true;
+    await tester.pumpWidget(_wrap(notifier));
+    await tester.tap(find.bySemanticsLabel(RegExp('${_month.month}월 10일 ')));
+    await tester.pump();
+
+    await tester.tap(find.text('팀 회의'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('일정 수정'), findsNothing);
+    expect(find.text('요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.'), findsOneWidget);
   });
 }

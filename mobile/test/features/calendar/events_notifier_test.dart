@@ -3,12 +3,16 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/features/calendar/event_category.dart';
 import 'package:mobile/features/calendar/provider/events_provider.dart';
+import 'package:flutter/material.dart' show Color;
 
 import '../expenses/expense_fake_http.dart';
 
 const _events = '/api/v1/events';
 const _special = '/api/v1/special-days';
+final _noon = DateTime(2026, 10, 8, 12);
+final _one = DateTime(2026, 10, 8, 13);
 
 Map<String, Object?> eventJson(
   int id, {
@@ -218,5 +222,110 @@ void main() {
   test('gridStart_1일이일요일인달_그날부터시작한다', () {
     // 2026-11-01 은 일요일
     expect(gridStart(DateTime(2026, 11)), DateTime(2026, 11, 1));
+  });
+
+  group('생성·수정·삭제', () {
+    final input = EventInput(
+      title: '점심',
+      allDay: false,
+      startAt: _noon,
+      endAt: _one,
+      eventCategory: EventCategory.WORK,
+      color: '#D50000',
+      location: '강남',
+    );
+
+    test('create_입력_LocalDateTime본문으로보내고다시조회한다', () async {
+      final notifier = create();
+      await until(() => !notifier.state.isLoading);
+      handler = (o) => o.path == _special ? ok([]) : (o.method == 'POST' ? ok(eventJson(5)) : eventsPage([eventJson(5)]));
+
+      await notifier.create(input);
+
+      final post = adapter.requestsOf('POST', _events).single;
+      expect(bodyOf(post), {
+        'title': '점심',
+        'allDay': false,
+        'startAt': '2026-10-08T12:00:00',
+        'endAt': '2026-10-08T13:00:00',
+        'eventCategory': 'WORK',
+        'color': '#D50000',
+        'location': '강남',
+        'description': null,
+      });
+      expect(adapter.requestsOf('GET', _events), hasLength(2));
+      expect(notifier.state.value!.events.single.id, 5);
+      notifier.dispose();
+    });
+
+    test('update_종료없음_endAt을null로보낸다', () async {
+      final notifier = create();
+      await until(() => !notifier.state.isLoading);
+      handler = (o) => o.path == _special ? ok([]) : (o.method == 'PUT' ? ok(eventJson(1)) : eventsPage([eventJson(1)]));
+
+      await notifier.update(
+        1,
+        EventInput(title: 't', allDay: false, startAt: _noon, endAt: null, eventCategory: EventCategory.PERSONAL),
+      );
+
+      final put = adapter.requestsOf('PUT', '$_events/1').single;
+      expect(bodyOf(put)['endAt'], isNull);
+      expect(bodyOf(put).containsKey('endAt'), isTrue);
+      notifier.dispose();
+    });
+
+    test('delete_성공_삭제후다시조회한다', () async {
+      final notifier = create();
+      await until(() => !notifier.state.isLoading);
+      handler = (o) => o.path == _special ? ok([]) : (o.method == 'DELETE' ? ok(null) : eventsPage([]));
+
+      await notifier.delete(1);
+
+      expect(adapter.requestsOf('DELETE', '$_events/1'), hasLength(1));
+      expect(notifier.state.value!.events, isEmpty);
+      notifier.dispose();
+    });
+
+    test('create_서버오류_예외를던지고목록은그대로다', () async {
+      final notifier = create();
+      await until(() => !notifier.state.isLoading);
+      handler = (o) => o.path == _special
+          ? ok([])
+          : (o.method == 'POST' ? errorBody(400, '종료 시간은 시작 시간보다 빠를 수 없습니다.') : eventsPage([eventJson(1)]));
+
+      await expectLater(
+        notifier.create(input),
+        throwsA(predicate((e) => eventErrorMessage(e!) == '종료 시간은 시작 시간보다 빠를 수 없습니다.')),
+      );
+      expect(notifier.state.value!.events.single.id, 1);
+      notifier.dispose();
+    });
+
+    test('getDetail_설명장소카테고리색까지파싱한다', () async {
+      final notifier = create();
+      await until(() => !notifier.state.isLoading);
+      handler = (o) => ok({
+            ...eventJson(3, endAt: null),
+            'color': '#D50000',
+            'eventCategory': 'WORK',
+            'description': '설명',
+            'location': '회의실',
+          });
+
+      final detail = await notifier.getDetail(3);
+
+      expect(detail.description, '설명');
+      expect(detail.location, '회의실');
+      expect(detail.eventCategory, EventCategory.WORK);
+      expect(detail.endAt, isNull);
+      expect(detail.displayColor, const Color(0xFFD50000));
+      notifier.dispose();
+    });
+  });
+
+  test('resolveEventColor_형식틀린색은카테고리기본색_둘다없으면개인색', () {
+    expect(resolveEventColor('red', EventCategory.WORK), EventCategory.WORK.defaultColor);
+    expect(resolveEventColor(null, null), EventCategory.PERSONAL.defaultColor);
+    expect(resolveEventColor('#039be5', null), const Color(0xFF039BE5));
   });
 }
