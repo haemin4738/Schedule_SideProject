@@ -57,7 +57,7 @@ void main() {
         return _sseBody(_chunks(['event:REFRESH\ndata:\n\n']));
       });
       final received = <String>[];
-      final sub = sseEvents(fakeDio(adapter), '/api/v1/sse/events', minBackoff: fast, maxBackoff: fast)
+      final sub = sseEvents(fakeDio(adapter), '/api/v1/sse/events', minBackoff: fast, maxBackoff: fast, stableAfter: Duration.zero)
           .listen((e) => received.add(e.name));
 
       await _waitFor(() => connections >= 2 && received.length >= 4);
@@ -122,6 +122,27 @@ void main() {
       expect(gaps[2], greaterThanOrEqualTo(40));
       expect(gaps[3], greaterThanOrEqualTo(40));
       expect(gaps[3], lessThan(200));
+    });
+
+    test('sseEvents_열리자마자끊기는연결_대기시간을되돌리지않고늘린다', () async {
+      final times = <DateTime>[];
+      final adapter = FakeHttpAdapter((o) {
+        times.add(DateTime.now());
+        return _sseBody(_chunks(['event:CONNECTED\ndata:\n\n']));
+      });
+      final sub = sseEvents(
+        fakeDio(adapter),
+        '/sse',
+        minBackoff: const Duration(milliseconds: 10),
+        maxBackoff: const Duration(milliseconds: 40),
+      ).listen((_) {});
+
+      await _waitFor(() => times.length >= 4);
+      await sub.cancel();
+
+      final gaps = [for (var i = 1; i < 4; i++) times[i].difference(times[i - 1]).inMilliseconds];
+      expect(gaps[1], greaterThanOrEqualTo(20));
+      expect(gaps[2], greaterThanOrEqualTo(40));
     });
   });
 }

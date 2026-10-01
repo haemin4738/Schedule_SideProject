@@ -44,6 +44,7 @@ Stream<SseEvent> sseEvents(
   String path, {
   Duration minBackoff = const Duration(seconds: 1),
   Duration maxBackoff = const Duration(seconds: 30),
+  Duration stableAfter = const Duration(seconds: 10),
 }) {
   late StreamController<SseEvent> controller;
   CancelToken? cancel;
@@ -65,11 +66,13 @@ Stream<SseEvent> sseEvents(
         );
         if (stopped) break;
         controller.add(const SseEvent(sseOpenEvent, ''));
-        backoff = minBackoff;
+        final openedAt = DateTime.now();
         await for (final event in parseSse(res.data!.stream)) {
           if (stopped) break;
           controller.add(event);
         }
+        // 연결 직후 바로 끊기는 경우(프록시·서버 오류)에 1초마다 재연결·재조회하지 않도록, 충분히 유지된 연결만 대기 시간을 되돌린다
+        if (DateTime.now().difference(openedAt) >= stableAfter) backoff = minBackoff;
       } catch (_) {
         // 연결 실패·끊김 — 아래에서 기다렸다 다시 연결한다 (세션 만료면 인터셉터가 로그아웃 처리)
       }
