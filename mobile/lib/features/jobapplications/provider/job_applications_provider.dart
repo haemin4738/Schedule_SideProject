@@ -171,7 +171,9 @@ class JobApplicationsNotifier
   }
 }
 
-final jobApplicationsProvider = StateNotifierProvider<JobApplicationsNotifier,
-    AsyncValue<JobApplicationsState>>(
+/// 로그아웃 후 다시 로그인했을 때 이전 사용자의 지원 내역이 남지 않도록 autoDispose.
+/// 등록·수정 폼은 목록 화면 위에 열리므로 그동안 목록이 계속 구독해 같은 인스턴스가 유지된다.
+final jobApplicationsProvider = StateNotifierProvider.autoDispose<
+    JobApplicationsNotifier, AsyncValue<JobApplicationsState>>(
   (_) => JobApplicationsNotifier(),
 );

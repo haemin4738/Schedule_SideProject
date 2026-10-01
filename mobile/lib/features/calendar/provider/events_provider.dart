@@ -42,7 +42,9 @@ class EventsNotifier extends StateNotifier<AsyncValue<List<EventItem>>> {
   }
 }
 
-final eventsProvider =
-    StateNotifierProvider<EventsNotifier, AsyncValue<List<EventItem>>>(
+/// 로그아웃 후 다시 로그인했을 때 이전 사용자의 일정이 남지 않도록 autoDispose.
+/// 캘린더 화면이 구독하는 동안에는 같은 인스턴스가 유지된다.
+final eventsProvider = StateNotifierProvider.autoDispose<EventsNotifier,
+    AsyncValue<List<EventItem>>>(
   (_) => EventsNotifier(),
 );
