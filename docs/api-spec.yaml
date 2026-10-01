@@ -18,9 +18,11 @@ tags:
   - name: expenses
     description: 가계부 내역 CRUD / 요약
   - name: job-applications
-    description: 구직활동(지원 내역) 관리 — 현재 스펙에는 목록 조회만 기술
+    description: 구직활동(지원 내역) CRUD
   - name: special-days
     description: 공휴일·기념일·24절기 (한국천문연구원 특일 정보, 사용자 공용 데이터)
+  - name: sse
+    description: 실시간 알림 (Server-Sent Events)
 
 # ------------------------------------------------------------------
 # 보안: 모든 엔드포인트는 기본적으로 BearerAuth 필요
@@ -971,6 +973,121 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse_Error'
 
+    post:
+      tags: [job-applications]
+      summary: 지원 내역 등록
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobApplicationRequest'
+      responses:
+        '201':
+          description: 등록된 지원 내역
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_JobApplicationResponse'
+        '400':
+          description: 유효성 오류 (필수값 누락, 길이 초과, status 값 오류 등)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+
+  /job-applications/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+
+    get:
+      tags: [job-applications]
+      summary: 지원 내역 단건 조회
+      description: 목록 응답에 없는 jobPostingUrl·memo·시각 필드를 포함한다. 수정 폼은 이 응답으로 채운다
+      responses:
+        '200':
+          description: 지원 내역 상세
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_JobApplicationResponse'
+        '403':
+          description: 본인 지원 내역 아님
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '404':
+          description: 지원 내역 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+
+    put:
+      tags: [job-applications]
+      summary: 지원 내역 수정
+      description: 전체 필드를 교체한다 (jobPostingUrl·memo 를 비우려면 null 또는 생략)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobApplicationRequest'
+      responses:
+        '200':
+          description: 수정된 지원 내역
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_JobApplicationResponse'
+        '400':
+          description: 유효성 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '403':
+          description: 본인 지원 내역 아님
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '404':
+          description: 지원 내역 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+
+    delete:
+      tags: [job-applications]
+      summary: 지원 내역 삭제
+      responses:
+        '200':
+          description: 삭제 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Empty'
+        '403':
+          description: 본인 지원 내역 아님
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '404':
+          description: 지원 내역 없음
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+
   # ================================================================
   # SPECIAL DAYS
   # ================================================================
@@ -1024,6 +1141,42 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse_Error'
 
+
+  # ================================================================
+  # SSE
+  # ================================================================
+  /sse/events:
+    get:
+      tags: [sse]
+      summary: 일정 변경 알림 구독
+      description: |
+        본인 일정이 생성·수정·삭제되어 커밋되면 `REFRESH` 이벤트(data 는 빈 문자열)를 보낸다. 받으면 보고 있는 기간의 일정을 다시 조회한다.
+        - 브라우저 EventSource 는 헤더를 못 붙이므로 이 경로에서만 `token` 쿼리 파라미터로 access token 을 받는다 (Authorization 헤더도 가능)
+        - 연결 유지 30분. 같은 사용자가 새로 구독하면 이전 연결은 닫힌다 (사용자당 1개)
+        - 만료된 토큰으로 연결하면 401 → 토큰 재발급 후 다시 연결
+      parameters:
+        - name: token
+          in: query
+          required: false
+          description: access token (Authorization 헤더를 못 쓰는 EventSource 용). 헤더가 없으면 필수이며 없거나 만료되면 401. URL 에 실리므로 서버·프록시 접근 로그에 남을 수 있다
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 이벤트 스트림
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  event:REFRESH
+                  data:
+        '401':
+          description: 토큰 없음·만료·무효
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
 
 # ------------------------------------------------------------------
 # COMPONENTS
@@ -1589,6 +1742,40 @@ components:
         status:
           $ref: '#/components/schemas/JobApplicationStatus'
         appliedAt: { type: string, format: date, example: '2026-09-10' }
+
+    JobApplicationRequest:
+      type: object
+      required: [companyName, position, status, appliedAt]
+      properties:
+        companyName: { type: string, maxLength: 200, example: 회사A }
+        position: { type: string, maxLength: 200, example: 백엔드 개발자 }
+        status:
+          $ref: '#/components/schemas/JobApplicationStatus'
+        appliedAt: { type: string, format: date, example: '2026-09-10' }
+        jobPostingUrl: { type: string, maxLength: 500, nullable: true, example: 'https://example.com/jobs/1' }
+        memo: { type: string, nullable: true, example: 1차 면접 9/20 }
+
+    JobApplicationResponse:
+      type: object
+      properties:
+        id: { type: integer, format: int64, example: 1 }
+        companyName: { type: string, example: 회사A }
+        position: { type: string, example: 백엔드 개발자 }
+        status:
+          $ref: '#/components/schemas/JobApplicationStatus'
+        appliedAt: { type: string, format: date, example: '2026-09-10' }
+        jobPostingUrl: { type: string, nullable: true, example: 'https://example.com/jobs/1' }
+        memo: { type: string, nullable: true, example: 1차 면접 9/20 }
+        createdAt: { type: string, format: date-time, example: '2026-09-10T09:00:00' }
+        updatedAt: { type: string, format: date-time, example: '2026-09-12T18:30:00' }
+
+    ApiResponse_JobApplicationResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          $ref: '#/components/schemas/JobApplicationResponse'
+        error: { type: string, nullable: true, example: null }
 
     ApiResponse_SpecialDayList:
       type: object
