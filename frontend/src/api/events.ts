@@ -47,16 +47,26 @@ export const toLocalDateTime = (date: Date): string => dayjs(date).format('YYYY-
 const PAGE_SIZE = 100
 // 비정상 응답으로 무한 반복하지 않도록 페이지 수 상한을 둔다 (100 × 20 = 한 화면 2000건)
 const MAX_PAGES = 20
+/** 한 화면에 불러오는 일정 최대 개수 */
+export const MAX_EVENTS_IN_RANGE = PAGE_SIZE * MAX_PAGES
 
-/** [from, to] 기간과 겹치는 일정을 모든 페이지에 걸쳐 가져온다 */
-export const getEventsInRange = async (from: Date, to: Date): Promise<EventSummary[]> => {
+/**
+ * [from, to] 기간과 겹치는 일정을 모든 페이지에 걸쳐 가져온다.
+ * 페이지 상한(2000건)에 걸려 일부만 가져왔으면 onTruncated 를 부른다
+ */
+export const getEventsInRange = async (
+  from: Date,
+  to: Date,
+  onTruncated?: () => void,
+): Promise<EventSummary[]> => {
   const params = { from: toLocalDateTime(from), to: toLocalDateTime(to), size: PAGE_SIZE }
   const events: EventSummary[] = []
   for (let page = 0; page < MAX_PAGES; page++) {
     const { data } = await client.get<PagedEnvelope<EventSummary>>('/api/v1/events', { params: { ...params, page } })
     events.push(...data.data)
-    if (page + 1 >= data.meta.totalPages) break
+    if (page + 1 >= data.meta.totalPages) return events
   }
+  onTruncated?.()
   return events
 }
 

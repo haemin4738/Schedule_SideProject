@@ -8,8 +8,8 @@ import com.lifelog.domain.user.UserRepository;
 import com.lifelog.event.dto.EventRequest;
 import com.lifelog.event.dto.EventResponse;
 import com.lifelog.event.dto.EventSummary;
-import com.lifelog.sse.SseService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -26,7 +26,8 @@ public class EventService {
     private final EventRepository eventRepository;
     private final UserRepository userRepository;
     private final EventCacheService eventCacheService;
-    private final SseService sseService;
+    // 캐시 무효화·SSE 알림은 커밋 후 EventsChangedListener 가 처리한다
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public EventResponse create(Long userId, EventRequest request) {
@@ -35,8 +36,7 @@ public class EventService {
                 request.startAt(), request.endAt(), request.allDay(),
                 request.location(), request.color(), request.eventCategory());
         EventResponse response = EventResponse.from(eventRepository.save(event));
-        eventCacheService.evictAll();
-        sseService.publish(userId);
+        eventPublisher.publishEvent(new EventsChangedEvent(userId));
         return response;
     }
 
@@ -61,8 +61,7 @@ public class EventService {
                 request.endAt(), request.allDay(), request.location(),
                 request.color(), request.eventCategory());
         EventResponse response = EventResponse.from(eventRepository.save(event));
-        eventCacheService.evictAll();
-        sseService.publish(userId);
+        eventPublisher.publishEvent(new EventsChangedEvent(userId));
         return response;
     }
 
@@ -70,8 +69,7 @@ public class EventService {
     public void delete(Long userId, Long eventId) {
         Event event = getOwnedEvent(userId, eventId);
         eventRepository.delete(event);
-        eventCacheService.evictAll();
-        sseService.publish(userId);
+        eventPublisher.publishEvent(new EventsChangedEvent(userId));
     }
 
     private User getUser(Long userId) {

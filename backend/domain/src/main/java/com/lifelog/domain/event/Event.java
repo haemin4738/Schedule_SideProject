@@ -6,7 +6,8 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "events")
+@Table(name = "events",
+        indexes = @Index(name = "idx_events_user_start", columnList = "user_id, start_at"))
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Event {

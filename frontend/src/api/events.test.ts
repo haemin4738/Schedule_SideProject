@@ -39,8 +39,21 @@ describe('events api', () => {
   it('getEventsInRange_serverKeepsReportingMorePages_stopsAtPageLimit', async () => {
     const get = vi.spyOn(client, 'get').mockImplementation(async () => page([{ id: 1 }], 0, 999))
 
-    await getEventsInRange(new Date(), new Date())
+    const onTruncated = vi.fn()
+    await getEventsInRange(new Date(), new Date(), onTruncated)
 
     expect(get).toHaveBeenCalledTimes(20)
+    expect(onTruncated).toHaveBeenCalledTimes(1)
+  })
+
+  it('getEventsInRange_exactlyAtPageLimit_doesNotReportTruncated', async () => {
+    vi.spyOn(client, 'get').mockImplementation(async (_url, config) =>
+      page([{ id: 1 }], (config?.params as { page: number } | undefined)?.page ?? 0, 20),
+    )
+    const onTruncated = vi.fn()
+
+    await getEventsInRange(new Date(), new Date(), onTruncated)
+
+    expect(onTruncated).not.toHaveBeenCalled()
   })
 })

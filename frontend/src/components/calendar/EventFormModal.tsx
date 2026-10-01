@@ -76,13 +76,20 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
     control,
     setValue,
     getValues,
-    formState: { errors, isSubmitting, isDirty },
+    formState: { errors, isSubmitting, isDirty, dirtyFields },
   } = useForm<FormValues>({ defaultValues: toFormValues(event, defaultStart, defaultEnd, defaultAllDay) })
   const allDay = useWatch({ control, name: 'allDay' })
   const category = useWatch({ control, name: 'eventCategory' })
   const color = useWatch({ control, name: 'color' })
 
+  // 종료 없이 저장된 일정은 폼에 임시 종료(1시간 뒤)를 채워 보여줄 뿐이다.
+  // 종료·종일을 건드리지 않았으면 종료 없음을 유지하고, 임시 종료로 검증하지도 않는다
+  // dirtyFields 는 formState 에서 꺼내 읽어야 구독돼 값이 보장된다 (react-hook-form 문서)
+  const keepsNoEnd = () =>
+    isEdit && event.endAt === null && !dirtyFields.endDate && !dirtyFields.endTime && !dirtyFields.allDay
+
   const validateEnd = () => {
+    if (keepsNoEnd()) return true
     const v = getValues()
     const start = v.allDay ? v.startDate : `${v.startDate}T${v.startTime}`
     const end = v.allDay ? v.endDate : `${v.endDate}T${v.endTime}`
@@ -94,6 +101,7 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
     setError(null)
     try {
       const body = toEventRequest(values)
+      if (keepsNoEnd()) body.endAt = null
       if (isEdit) await updateEvent(event.id, body)
       else await createEvent(body)
       onSaved()
@@ -126,6 +134,28 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
     else onClose()
   }
   const dialogRef = useDialog<HTMLDivElement>(requestClose)
+
+  // 색상 라디오: Tab 으로는 선택된 항목 하나에만 들어오고 방향키로 고르며 이동한다 (WAI-ARIA radio group 패턴)
+  const colorValues = ['', ...EVENT_COLORS.map((c) => c.value)]
+  // 목록에 없는 색(다른 클라이언트가 저장한 색)이면 첫 항목을 Tab 진입점으로 둔다
+  const colorTabStop = colorValues.includes(color) ? color : ''
+  const onColorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const current = colorValues.indexOf(colorTabStop)
+    const last = colorValues.length - 1
+    const target = {
+      ArrowRight: (current + 1) % colorValues.length,
+      ArrowDown: (current + 1) % colorValues.length,
+      ArrowLeft: (current - 1 + colorValues.length) % colorValues.length,
+      ArrowUp: (current - 1 + colorValues.length) % colorValues.length,
+      Home: 0,
+      End: last,
+    }[e.key]
+    if (target === undefined) return
+    e.preventDefault()
+    const next = colorValues[target]
+    setValue('color', next, { shouldDirty: true })
+    e.currentTarget.querySelector<HTMLElement>(`[data-color="${next}"]`)?.focus()
+  }
 
   return (
     <div
@@ -251,14 +281,21 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
             </div>
           </div>
 
-          <div role="radiogroup" aria-label="색상" className="flex flex-wrap items-center gap-2">
+          <div
+            role="radiogroup"
+            aria-label="색상"
+            onKeyDown={onColorKeyDown}
+            className="flex flex-wrap items-center gap-2"
+          >
             <button
               type="button"
               role="radio"
               aria-checked={color === ''}
+              tabIndex={colorTabStop === '' ? 0 : -1}
+              data-color=""
               aria-label="카테고리 기본 색"
               title="카테고리 기본 색"
-              onClick={() => setValue('color', '')}
+              onClick={() => setValue('color', '', { shouldDirty: true })}
               style={{ backgroundColor: CATEGORY_DEFAULT_COLORS[category] }}
               className={`h-6 w-6 rounded-full ring-offset-2 ${color === '' ? 'ring-2 ring-gray-800' : ''}`}
             >
@@ -272,9 +309,11 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
                 type="button"
                 role="radio"
                 aria-checked={color === c.value}
+                tabIndex={colorTabStop === c.value ? 0 : -1}
+                data-color={c.value}
                 aria-label={c.label}
                 title={c.label}
-                onClick={() => setValue('color', c.value)}
+                onClick={() => setValue('color', c.value, { shouldDirty: true })}
                 style={{ backgroundColor: c.value }}
                 className={`h-6 w-6 rounded-full ring-offset-2 ${color === c.value ? 'ring-2 ring-gray-800' : ''}`}
               />

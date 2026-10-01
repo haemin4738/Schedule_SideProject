@@ -1,6 +1,9 @@
 package com.lifelog.event.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.lifelog.domain.event.EventCategory;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -21,4 +24,14 @@ public record EventRequest(
         String location,
         String color,
         EventCategory eventCategory
-) {}
+) {
+
+    /** 종료 시각은 시작 시각과 같거나 이후여야 한다 (종료 없음은 허용) */
+    // 검증 전용 — JSON 속성·OpenAPI 스키마에 노출하지 않는다
+    @JsonIgnore
+    @Schema(hidden = true)
+    @AssertTrue(message = "종료 시간은 시작 시간보다 빠를 수 없습니다.")
+    public boolean isEndAtNotBeforeStartAt() {
+        return endAt == null || startAt == null || !endAt.isBefore(startAt);
+    }
+}

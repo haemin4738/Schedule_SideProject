@@ -1,6 +1,6 @@
 import { isTokenExpired, refreshSession } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errorMessage'
-import { getEvent, getEventsInRange, type EventDetail } from '@/api/events'
+import { getEvent, getEventsInRange, MAX_EVENTS_IN_RANGE, type EventDetail } from '@/api/events'
 import {
   jobApplicationToCalendarEvent,
   toCalendarEvent,
@@ -86,12 +86,19 @@ export default function CalendarPage() {
   const [view, setView] = useState<View>('month')
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [error, setError] = useState<string | null>(null)
+  // 보이는 기간의 일정이 페이지 상한을 넘어 일부만 표시 중인지
+  const [truncated, setTruncated] = useState(false)
   const [modal, setModal] = useState<ModalState>(null)
   const [layers, setLayers] = useState<CalendarLayers>(loadLayers)
   const navigate = useNavigate()
 
   const range = useMemo(() => visibleRange(date, view), [date, view])
   const overlays = useCalendarOverlays(range, layers)
+
+  const notices = [
+    ...(truncated && layers.events ? [`일정이 너무 많아 앞의 ${MAX_EVENTS_IN_RANGE.toLocaleString('ko-KR')}개만 표시합니다.`] : []),
+    ...overlays.errors,
+  ]
 
   const toggleLayer = (layer: CalendarLayer) => {
     const next = { ...layers, [layer]: !layers[layer] }
@@ -122,10 +129,14 @@ export default function CalendarPage() {
 
   const loadEvents = useCallback(() => {
     const seq = ++requestSeq.current
-    getEventsInRange(range.from, range.to)
+    let cut = false
+    getEventsInRange(range.from, range.to, () => {
+      cut = true
+    })
       .then((list) => {
         if (seq !== requestSeq.current) return
         setEvents(list.map(toCalendarEvent))
+        setTruncated(cut)
         setError(null)
       })
       .catch((err) => {
@@ -133,6 +144,7 @@ export default function CalendarPage() {
         if (seq !== requestSeq.current) return
         // 이전 기간의 일정이 오류와 함께 남아 있지 않게 비운다
         setEvents([])
+        setTruncated(false)
         setError(getApiErrorMessage(err, '일정을 불러오지 못했습니다.'))
       })
   }, [range])
@@ -266,9 +278,9 @@ export default function CalendarPage() {
       )}
 
       {/* live region 은 항상 두고 내용만 바꾼다 (내용과 함께 새로 삽입되면 스크린리더가 읽지 않을 수 있다) */}
-      <div role="status" className={overlays.errors.length > 0 ? 'mx-4 mt-2' : 'sr-only'}>
-        {overlays.errors.length > 0 && (
-          <p className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{overlays.errors.join(' ')}</p>
+      <div role="status" className={notices.length > 0 ? 'mx-4 mt-2' : 'sr-only'}>
+        {notices.length > 0 && (
+          <p className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{notices.join(' ')}</p>
         )}
       </div>
 
