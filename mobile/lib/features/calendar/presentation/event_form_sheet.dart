@@ -17,7 +17,10 @@ class EventFormSheet extends ConsumerStatefulWidget {
   /// 생성 시 기본 날짜 (캘린더에서 고른 날)
   final DateTime defaultDate;
 
-  const EventFormSheet({super.key, this.existing, required this.defaultDate});
+  /// 현재 시각 (테스트에서 고정하기 위해 주입)
+  final DateTime Function() now;
+
+  const EventFormSheet({super.key, this.existing, required this.defaultDate, this.now = DateTime.now});
 
   @override
   ConsumerState<EventFormSheet> createState() => _EventFormSheetState();
@@ -55,7 +58,7 @@ class _EventFormSheetState extends ConsumerState<EventFormSheet> {
       _end = e.endAt ?? (e.allDay ? e.startAt : e.startAt.add(const Duration(hours: 1)));
     } else {
       // 고른 날의 다음 정각부터 1시간 (오늘이 아니면 오전 9시)
-      final now = DateTime.now();
+      final now = widget.now();
       final d = widget.defaultDate;
       final isToday = d.year == now.year && d.month == now.month && d.day == now.day;
       _allDay = false;
@@ -82,6 +85,7 @@ class _EventFormSheetState extends ConsumerState<EventFormSheet> {
     );
     if (picked == null || !mounted) return;
     setState(() {
+      _serverError = null;
       final next = DateTime(picked.year, picked.month, picked.day, current.hour, current.minute);
       if (start) {
         // 시작을 옮기면 기간을 유지하도록 종료도 함께 민다
@@ -100,6 +104,7 @@ class _EventFormSheetState extends ConsumerState<EventFormSheet> {
     final picked = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(current));
     if (picked == null || !mounted) return;
     setState(() {
+      _serverError = null;
       final next = DateTime(current.year, current.month, current.day, picked.hour, picked.minute);
       if (start) {
         final length = _end.difference(_start);
@@ -112,10 +117,11 @@ class _EventFormSheetState extends ConsumerState<EventFormSheet> {
     });
   }
 
-  /// 종일 일정은 시작일 00:00:00 ~ 종료일 23:59:59 로 저장한다 (웹 toEventRequest 와 같은 규칙)
+  /// 종일 일정은 시작일 00:00:00 ~ 종료일 23:59:59, 시간 일정은 분 단위(초 0)로 저장한다 (웹 toEventRequest 와 같은 규칙)
   EventInput _input() {
-    final start = _allDay ? DateTime(_start.year, _start.month, _start.day) : _start;
-    final end = _allDay ? DateTime(_end.year, _end.month, _end.day, 23, 59, 59) : _end;
+    DateTime minutes(DateTime d) => DateTime(d.year, d.month, d.day, d.hour, d.minute);
+    final start = _allDay ? DateTime(_start.year, _start.month, _start.day) : minutes(_start);
+    final end = _allDay ? DateTime(_end.year, _end.month, _end.day, 23, 59, 59) : minutes(_end);
     final location = _locationController.text.trim();
     final description = _descriptionController.text.trim();
     return EventInput(
@@ -124,8 +130,8 @@ class _EventFormSheetState extends ConsumerState<EventFormSheet> {
       startAt: start,
       endAt: _keepsNoEnd ? null : end,
       eventCategory: _category,
-      // 앱에는 색 선택이 없으므로 웹에서 고른 색을 지우지 않게 그대로 보낸다
-      color: widget.existing?.color,
+      // 앱에는 색 선택이 없으므로 웹에서 고른 색을 지우지 않게 그대로 보낸다 (형식이 틀린 색은 웹처럼 비운다)
+      color: isHexColor(widget.existing?.color) ? widget.existing!.color : null,
       location: location.isEmpty ? null : location,
       description: description.isEmpty ? null : description,
     );
@@ -206,7 +212,7 @@ class _EventFormSheetState extends ConsumerState<EventFormSheet> {
             onPressed: _submitting ? null : () => _pickTime(start: start),
             child: Text(_timeLabel.format(value), semanticsLabel: '$label 시간 ${_timeLabel.format(value)}'),
           ),
-        if (noEnd) const Text('(종료 없음)', style: TextStyle(fontSize: 12, color: Colors.black54)),
+        if (noEnd) Text('(종료 없음)', style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor)),
       ],
     );
   }
@@ -275,11 +281,16 @@ class _EventFormSheetState extends ConsumerState<EventFormSheet> {
                 minLines: 2,
                 maxLines: 5,
               ),
-              if (_serverError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(_serverError!, style: TextStyle(color: errorColor)),
-                ),
+              // 오류 문구가 바뀌면 스크린리더가 읽도록 live region 으로 둔다
+              Semantics(
+                liveRegion: true,
+                child: _serverError == null
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(_serverError!, style: TextStyle(color: errorColor)),
+                      ),
+              ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,

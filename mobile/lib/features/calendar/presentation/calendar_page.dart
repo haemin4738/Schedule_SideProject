@@ -59,7 +59,20 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
   }
 
   /// 생성(existing 없음) 또는 수정 시트를 연다. 수정은 설명·장소가 유실되지 않게 단건을 조회한 뒤 연다
+  // 단건 조회를 기다리는 동안 연달아 눌러 시트가 여러 개 열리지 않게 한다
+  bool _opening = false;
+
   Future<void> _openForm({EventItem? item}) async {
+    if (_opening) return;
+    _opening = true;
+    try {
+      await _showForm(item);
+    } finally {
+      _opening = false;
+    }
+  }
+
+  Future<void> _showForm(EventItem? item) async {
     EventDetail? detail;
     if (item != null) {
       try {
@@ -75,6 +88,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       builder: (_) => EventFormSheet(existing: detail, defaultDate: _selected),
     );
   }

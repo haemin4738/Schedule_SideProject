@@ -26,10 +26,12 @@ EventCategory? parseEventCategory(Object? value) =>
 
 final _hexColor = RegExp(r'^#[0-9A-Fa-f]{6}$');
 
+bool isHexColor(String? color) => color != null && _hexColor.hasMatch(color);
+
 /// 일정 표시 색: 직접 고른 색(형식이 올바를 때) → 카테고리 기본 색 → 개인 기본 색 (웹 resolveEventColor 와 같은 규칙)
 Color resolveEventColor(String? color, EventCategory? category) {
-  if (color != null && _hexColor.hasMatch(color)) {
-    return Color(int.parse('FF${color.substring(1)}', radix: 16));
+  if (isHexColor(color)) {
+    return Color(int.parse('FF${color!.substring(1)}', radix: 16));
   }
   return (category ?? EventCategory.PERSONAL).defaultColor;
 }

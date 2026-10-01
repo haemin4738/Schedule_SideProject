@@ -293,12 +293,10 @@ void main() {
           ? ok([])
           : (o.method == 'POST' ? errorBody(400, '종료 시간은 시작 시간보다 빠를 수 없습니다.') : eventsPage([eventJson(1)]));
 
-      await expectLater(notifier.create(input), throwsA(isA<DioException>()));
-      try {
-        await notifier.create(input);
-      } catch (e) {
-        expect(eventErrorMessage(e), '종료 시간은 시작 시간보다 빠를 수 없습니다.');
-      }
+      await expectLater(
+        notifier.create(input),
+        throwsA(predicate((e) => eventErrorMessage(e!) == '종료 시간은 시작 시간보다 빠를 수 없습니다.')),
+      );
       expect(notifier.state.value!.events.single.id, 1);
       notifier.dispose();
     });

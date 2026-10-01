@@ -40,7 +40,14 @@ class _RecordingNotifier extends EventsNotifier {
 }
 
 /// 시트를 열고 닫힌 결과(true=저장·삭제됨)를 기록하는 테스트 화면
-Widget _host(_RecordingNotifier notifier, {EventDetail? existing, List<bool?>? results}) => ProviderScope(
+Widget _host(
+  _RecordingNotifier notifier, {
+  EventDetail? existing,
+  List<bool?>? results,
+  DateTime? defaultDate,
+  DateTime Function() now = DateTime.now,
+}) =>
+    ProviderScope(
       overrides: [eventsProvider.overrideWith((ref) => notifier)],
       child: MaterialApp(
         home: Builder(
@@ -51,7 +58,7 @@ Widget _host(_RecordingNotifier notifier, {EventDetail? existing, List<bool?>? r
                   final r = await showModalBottomSheet<bool>(
                     context: context,
                     isScrollControlled: true,
-                    builder: (_) => EventFormSheet(existing: existing, defaultDate: DateTime(2026, 10, 8)),
+                    builder: (_) => EventFormSheet(existing: existing, defaultDate: defaultDate ?? DateTime(2026, 10, 8), now: now),
                   );
                   results?.add(r);
                 },
@@ -223,5 +230,124 @@ void main() {
     await _open(tester);
 
     expect(find.byTooltip('삭제'), findsNothing);
+  });
+
+  group('날짜·시간 규칙', () {
+    testWidgets('render_오늘을고르면_다음정각부터1시간이다', (tester) async {
+      final notifier = _RecordingNotifier();
+      await tester.pumpWidget(_host(notifier, defaultDate: DateTime(2026, 10, 8), now: () => DateTime(2026, 10, 8, 14, 30)));
+      await _open(tester);
+
+      await tester.enterText(find.widgetWithText(TextFormField, '제목'), '일정');
+      await tester.tap(find.text('저장'));
+      await tester.pumpAndSettle();
+
+      expect(notifier.created!.startAt, DateTime(2026, 10, 8, 15));
+      expect(notifier.created!.endAt, DateTime(2026, 10, 8, 16));
+    });
+
+    testWidgets('render_오늘23시에고르면_다음날0시부터다', (tester) async {
+      final notifier = _RecordingNotifier();
+      await tester.pumpWidget(_host(notifier, defaultDate: DateTime(2026, 10, 8), now: () => DateTime(2026, 10, 8, 23, 10)));
+      await _open(tester);
+
+      await tester.enterText(find.widgetWithText(TextFormField, '제목'), '일정');
+      await tester.tap(find.text('저장'));
+      await tester.pumpAndSettle();
+
+      expect(notifier.created!.startAt, DateTime(2026, 10, 9));
+      expect(notifier.created!.endAt, DateTime(2026, 10, 9, 1));
+    });
+
+    testWidgets('pickDate_시작날짜를옮기면_기간을유지한채종료도옮긴다', (tester) async {
+      final notifier = _RecordingNotifier();
+      await tester.pumpWidget(_host(notifier));
+      await _open(tester);
+
+      await tester.tap(find.bySemanticsLabel('시작 날짜 2026-10-08'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('12'));
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextFormField, '제목'), '일정');
+      await tester.tap(find.text('저장'));
+      await tester.pumpAndSettle();
+
+      expect(notifier.created!.startAt, DateTime(2026, 10, 12, 9));
+      expect(notifier.created!.endAt, DateTime(2026, 10, 12, 10));
+    });
+
+    testWidgets('submit_종료가시작보다빠르면_오류를보여주고저장하지않는다', (tester) async {
+      final notifier = _RecordingNotifier();
+      await tester.pumpWidget(_host(notifier));
+      await _open(tester);
+
+      await tester.tap(find.bySemanticsLabel('종료 날짜 2026-10-08'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('5'));
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextFormField, '제목'), '일정');
+      await tester.tap(find.text('저장'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('종료는 시작보다 빠를 수 없습니다.'), findsOneWidget);
+      expect(notifier.created, isNull);
+
+      // 날짜를 다시 고치면 오류 문구가 사라진다
+      await tester.tap(find.bySemanticsLabel('종료 날짜 2026-10-05'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('9'));
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(find.text('종료는 시작보다 빠를 수 없습니다.'), findsNothing);
+    });
+
+    testWidgets('submit_종일인기존일정수정_종료일23시59분59초를유지한다', (tester) async {
+      final notifier = _RecordingNotifier();
+      final existing = EventDetail(
+        id: 9,
+        title: '여행',
+        startAt: DateTime(2026, 10, 3),
+        endAt: DateTime(2026, 10, 5, 23, 59, 59),
+        allDay: true,
+      );
+      await tester.pumpWidget(_host(notifier, existing: existing));
+      await _open(tester);
+
+      await tester.tap(find.text('저장'));
+      await tester.pumpAndSettle();
+
+      final input = notifier.updated!.$2;
+      expect(input.allDay, isTrue);
+      expect(input.startAt, DateTime(2026, 10, 3));
+      expect(input.endAt, DateTime(2026, 10, 5, 23, 59, 59));
+    });
+
+    testWidgets('submit_종료없는일정에서종일을켜면_그날끝까지종료를채운다', (tester) async {
+      final notifier = _RecordingNotifier();
+      await tester.pumpWidget(_host(notifier, existing: _detail()));
+      await _open(tester);
+
+      await tester.tap(find.text('종일'));
+      await tester.pump();
+      await tester.tap(find.text('저장'));
+      await tester.pumpAndSettle();
+
+      final input = notifier.updated!.$2;
+      expect(input.allDay, isTrue);
+      expect(input.endAt, DateTime(2026, 10, 8, 23, 59, 59));
+    });
+
+    testWidgets('submit_형식이틀린기존색_비워서보낸다', (tester) async {
+      final notifier = _RecordingNotifier();
+      await tester.pumpWidget(_host(notifier, existing: _detail(endAt: DateTime(2026, 10, 8, 15), color: 'red')));
+      await _open(tester);
+
+      await tester.tap(find.text('저장'));
+      await tester.pumpAndSettle();
+
+      expect(notifier.updated!.$2.color, isNull);
+    });
   });
 }

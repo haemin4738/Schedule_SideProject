@@ -1,7 +1,7 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter/painting.dart';
 import 'package:mobile/core/network/dio_client.dart';
 import 'package:mobile/features/calendar/event_category.dart';
 
