@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile/core/network/dio_client.dart';
 
@@ -23,20 +24,25 @@ class EventItem {
 }
 
 class EventsNotifier extends StateNotifier<AsyncValue<List<EventItem>>> {
-  EventsNotifier() : super(const AsyncValue.loading()) {
+  EventsNotifier({Dio? dio})
+      : _dio = dio ?? createDio(),
+        super(const AsyncValue.loading()) {
     refresh();
   }
 
-  final _dio = createDio();
+  final Dio _dio;
 
   Future<void> refresh() async {
     try {
       final res = await _dio.get('/api/v1/events');
+      // autoDispose 라 응답 전에 폐기될 수 있다 (예: 30초 주기 갱신 중 로그아웃)
+      if (!mounted) return;
       final items = (res.data['data'] as List)
           .map((e) => EventItem.fromJson(e as Map<String, dynamic>))
           .toList();
       state = AsyncValue.data(items);
     } catch (e, st) {
+      if (!mounted) return;
       state = AsyncValue.error(e, st);
     }
   }

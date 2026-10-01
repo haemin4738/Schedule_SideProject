@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile/core/network/dio_client.dart';
 import 'package:mobile/features/jobapplications/job_application_status.dart';
@@ -63,17 +64,23 @@ class JobApplicationsState {
 
 class JobApplicationsNotifier
     extends StateNotifier<AsyncValue<JobApplicationsState>> {
-  JobApplicationsNotifier() : super(const AsyncValue.loading()) {
+  JobApplicationsNotifier({Dio? dio})
+      : _dio = dio ?? createDio(),
+        super(const AsyncValue.loading()) {
     fetch();
   }
 
-  final _dio = createDio();
+  final Dio _dio;
+
+  // autoDispose 라 응답 전에 폐기될 수 있고, 페이지·필터를 빠르게 바꾸면 늦게 온 응답이 덮어쓸 수 있다
+  int _seq = 0;
 
   Future<void> fetch({
     int page = 0,
     int size = 20,
     JobApplicationStatus? status,
   }) async {
+    final seq = ++_seq;
     state = const AsyncValue.loading();
     try {
       final query = <String, dynamic>{'page': page, 'size': size};
@@ -83,6 +90,7 @@ class JobApplicationsNotifier
         '/api/v1/job-applications',
         queryParameters: query,
       );
+      if (!mounted || seq != _seq) return;
       final items = (res.data['data'] as List)
           .map((e) => JobApplicationItem.fromJson(e as Map<String, dynamic>))
           .toList();
@@ -97,6 +105,7 @@ class JobApplicationsNotifier
         statusFilter: status,
       ));
     } catch (e, st) {
+      if (!mounted || seq != _seq) return;
       state = AsyncValue.error(e, st);
     }
   }
@@ -142,7 +151,7 @@ class JobApplicationsNotifier
       'jobPostingUrl': jobPostingUrl,
       'memo': memo,
     });
-    await refresh();
+    if (mounted) await refresh();
   }
 
   Future<void> update(
@@ -162,12 +171,12 @@ class JobApplicationsNotifier
       'jobPostingUrl': jobPostingUrl,
       'memo': memo,
     });
-    await refresh();
+    if (mounted) await refresh();
   }
 
   Future<void> delete(int id) async {
     await _dio.delete('/api/v1/job-applications/$id');
-    await refresh();
+    if (mounted) await refresh();
   }
 }
 
