@@ -1,9 +1,13 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CalendarPage from './CalendarPage'
 import { getEvent, getEventsInRange, type EventSummary } from '@/api/events'
+import { getDailySummary } from '@/api/expenses'
+import { getJobApplicationsInRange, type JobApplicationSummary } from '@/api/jobApplications'
+import { getSpecialDays, type SpecialDay } from '@/api/specialDays'
+import { LAYERS_STORAGE_KEY } from '@/components/calendar/calendarLayers'
 import { useAuthStore } from '@/store/authStore'
 
 vi.mock('@/api/events', async (importOriginal) => ({
@@ -11,10 +15,37 @@ vi.mock('@/api/events', async (importOriginal) => ({
   getEventsInRange: vi.fn(),
   getEvent: vi.fn(),
 }))
+vi.mock('@/api/specialDays', () => ({ getSpecialDays: vi.fn() }))
+vi.mock('@/api/expenses', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/expenses')>()),
+  getDailySummary: vi.fn(),
+}))
+vi.mock('@/api/jobApplications', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/jobApplications')>()),
+  getJobApplicationsInRange: vi.fn(),
+}))
 vi.mock('@/components/LogoutButton', () => ({ default: () => <button type="button">로그아웃</button> }))
 
 const mockedRange = vi.mocked(getEventsInRange)
 const mockedGet = vi.mocked(getEvent)
+const mockedSpecialDays = vi.mocked(getSpecialDays)
+const mockedDaily = vi.mocked(getDailySummary)
+const mockedJobs = vi.mocked(getJobApplicationsInRange)
+
+const specialDaysRes = (data: SpecialDay[]) => ({ data: { success: true, data } }) as never
+const dailyRes = (days: { date: string; income: number; expense: number; net: number }[]) =>
+  ({ data: { success: true, data: { from: '', to: '', totalIncome: 0, totalExpense: 0, net: 0, days } } }) as never
+
+const chuseok: SpecialDay = { date: '2026-09-25', name: '추석', kind: 'HOLIDAY', holiday: true }
+const solarTerm: SpecialDay = { date: '2026-09-23', name: '추분', kind: 'SOLAR_TERM', holiday: false }
+const jobApplication: JobApplicationSummary = {
+  id: 7,
+  companyName: '라이프로그',
+  position: '백엔드',
+  status: 'APPLIED',
+  appliedAt: '2026-09-10',
+}
+const JOB_TITLE = '라이프로그 · 백엔드 (지원완료)'
 
 class FakeEventSource {
   static CLOSED = 2
@@ -42,8 +73,30 @@ const renderPage = () =>
     </MemoryRouter>,
   )
 
+function LocationProbe() {
+  const location = useLocation()
+  return <p data-testid="location">{location.pathname + location.search}</p>
+}
+
+const renderWithRoutes = () =>
+  render(
+    <MemoryRouter initialEntries={['/calendar']}>
+      <Routes>
+        <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="*" element={<LocationProbe />} />
+      </Routes>
+    </MemoryRouter>,
+  )
+
+const layerGroup = () => screen.getByRole('group', { name: '캘린더에 표시할 항목' })
+const layerButton = (name: string) => within(layerGroup()).getByRole('button', { name })
+
 describe('CalendarPage', () => {
   beforeEach(() => {
+    localStorage.clear()
+    mockedSpecialDays.mockResolvedValue(specialDaysRes([]))
+    mockedDaily.mockResolvedValue(dailyRes([]))
+    mockedJobs.mockResolvedValue([])
     // 달력 기준일을 2026-09-30(수)으로 고정한다 (타이머는 실제로 둔다)
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date(2026, 8, 30, 10, 0))
@@ -59,6 +112,7 @@ describe('CalendarPage', () => {
     vi.unstubAllGlobals()
     vi.resetAllMocks()
     useAuthStore.setState({ accessToken: null })
+    localStorage.clear()
   })
 
   it('render_monthView_showsKoreanTitleWeekdaysAndFetchesVisibleRange', async () => {
@@ -218,5 +272,200 @@ describe('CalendarPage', () => {
     expect(within(nav).getByRole('link', { name: '구직활동' })).toHaveAttribute('href', '/job-applications')
     expect(within(nav).getByRole('link', { name: '가계부' })).toHaveAttribute('href', '/expenses')
     expect(screen.getByRole('button', { name: '로그아웃' })).toBeInTheDocument()
+  })
+  describe('캘린더 오버레이', () => {
+    it('render_layerToggles_allOnByDefault', () => {
+      renderPage()
+
+      for (const name of ['일정', '구직활동', '가계부', '공휴일·기념일']) {
+        expect(layerButton(name)).toHaveAttribute('aria-pressed', 'true')
+      }
+    })
+
+    it('render_savedLayers_restoresToggleState', () => {
+      localStorage.setItem(LAYERS_STORAGE_KEY, JSON.stringify({ expenses: false }))
+      renderPage()
+
+      expect(layerButton('가계부')).toHaveAttribute('aria-pressed', 'false')
+      expect(layerButton('일정')).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('render_specialDays_showsHolidayNameInRedAndOthersInGray', async () => {
+      mockedSpecialDays.mockResolvedValue(specialDaysRes([chuseok, solarTerm]))
+      renderPage()
+
+      expect(await screen.findByText('추석')).toHaveClass('text-red-500')
+      expect(screen.getByText('추분')).toHaveClass('text-gray-500')
+      // 공휴일인 금요일 날짜 숫자도 빨강
+      expect(screen.getByRole('button', { name: '9월 25일 금요일 추석' })).toHaveClass('text-red-500')
+      expect(screen.getByRole('button', { name: '9월 23일 수요일' })).toHaveClass('text-gray-700')
+      expect(mockedSpecialDays).toHaveBeenCalledWith('2026-08-30', '2026-10-03')
+    })
+
+    it('onToggle_specialDaysOff_hidesNamesButKeepsHolidayRedAndSaves', async () => {
+      const user = userEvent.setup()
+      mockedSpecialDays.mockResolvedValue(specialDaysRes([chuseok]))
+      renderPage()
+      await screen.findByText('추석')
+
+      await user.click(layerButton('공휴일·기념일'))
+
+      expect(layerButton('공휴일·기념일')).toHaveAttribute('aria-pressed', 'false')
+      expect(screen.queryByText('추석')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '9월 25일 금요일 추석' })).toHaveClass('text-red-500')
+      expect(JSON.parse(localStorage.getItem(LAYERS_STORAGE_KEY)!)).toMatchObject({ specialDays: false })
+    })
+
+    it('onToggle_eventsOff_hidesEventsAndSaves', async () => {
+      const user = userEvent.setup()
+      mockedRange.mockResolvedValue([summary()])
+      renderPage()
+      await screen.findByText('팀 회의')
+
+      await user.click(layerButton('일정'))
+
+      expect(screen.queryByText('팀 회의')).not.toBeInTheDocument()
+      expect(JSON.parse(localStorage.getItem(LAYERS_STORAGE_KEY)!)).toEqual({
+        events: false,
+        jobApplications: true,
+        expenses: true,
+        specialDays: true,
+      })
+
+      await user.click(layerButton('일정'))
+      expect(await screen.findByText('팀 회의')).toBeInTheDocument()
+    })
+
+    it('render_dailyExpenses_showsSignedAmountsLinkingToExpensesMonth', async () => {
+      mockedDaily.mockResolvedValue(
+        dailyRes([
+          { date: '2026-09-05', income: 50000, expense: 12000, net: 38000 },
+          { date: '2026-10-01', income: 0, expense: 3000, net: -3000 },
+        ]),
+      )
+      renderPage()
+
+      const link = await screen.findByRole('link', { name: '9월 5일 가계부 지출 -12,000 수입 +50,000' })
+      expect(link).toHaveAttribute('href', '/expenses?month=2026-09')
+      expect(within(link).getByText('-12,000')).toHaveClass('text-red-500')
+      expect(within(link).getByText('+50,000')).toHaveClass('text-blue-500')
+      // 다음 달 날짜 칸은 그 달 가계부로 연결
+      const octLink = screen.getByRole('link', { name: '10월 1일 가계부 지출 -3,000' })
+      expect(octLink).toHaveAttribute('href', '/expenses?month=2026-10')
+      expect(within(octLink).queryByText(/^\+/)).not.toBeInTheDocument()
+      expect(mockedDaily).toHaveBeenCalledWith({ from: '2026-08-30', to: '2026-10-03' })
+    })
+
+    it('onToggle_expensesOff_hidesAmountsWithoutRefetching', async () => {
+      const user = userEvent.setup()
+      mockedDaily.mockResolvedValue(dailyRes([{ date: '2026-09-05', income: 0, expense: 12000, net: -12000 }]))
+      renderPage()
+      await screen.findByText('-12,000')
+
+      await user.click(layerButton('가계부'))
+
+      expect(screen.queryByText('-12,000')).not.toBeInTheDocument()
+      expect(mockedDaily).toHaveBeenCalledTimes(1)
+    })
+
+    it('render_expensesLayerSavedOff_doesNotRequestDailySummary', async () => {
+      localStorage.setItem(LAYERS_STORAGE_KEY, JSON.stringify({ expenses: false, jobApplications: false }))
+      renderPage()
+
+      await waitFor(() => expect(mockedSpecialDays).toHaveBeenCalled())
+      expect(mockedDaily).not.toHaveBeenCalled()
+      expect(mockedJobs).not.toHaveBeenCalled()
+    })
+
+    it('onMouseDownExpenseLink_stopsPropagationToDocument', async () => {
+      // react-big-calendar 는 document 의 mousedown/touchstart 로 칸 선택(일정 만들기)을 시작한다
+      mockedDaily.mockResolvedValue(dailyRes([{ date: '2026-09-05', income: 0, expense: 12000, net: -12000 }]))
+      renderPage()
+      const link = await screen.findByRole('link', { name: /9월 5일 가계부/ })
+      const onDocument = vi.fn()
+      document.addEventListener('mousedown', onDocument)
+      document.addEventListener('touchstart', onDocument)
+
+      try {
+        fireEvent.mouseDown(link)
+        fireEvent.touchStart(link)
+        expect(onDocument).not.toHaveBeenCalled()
+      } finally {
+        document.removeEventListener('mousedown', onDocument)
+        document.removeEventListener('touchstart', onDocument)
+      }
+    })
+
+    it('onClickExpenseLink_navigatesToExpensesMonth', async () => {
+      const user = userEvent.setup()
+      mockedDaily.mockResolvedValue(dailyRes([{ date: '2026-09-05', income: 0, expense: 12000, net: -12000 }]))
+      renderWithRoutes()
+
+      await user.click(await screen.findByRole('link', { name: /9월 5일 가계부/ }))
+
+      expect(screen.getByTestId('location')).toHaveTextContent('/expenses?month=2026-09')
+    })
+
+    it('render_weekView_showsOverlayTextWithoutExpenseLink', async () => {
+      const user = userEvent.setup()
+      mockedSpecialDays.mockResolvedValue(specialDaysRes([{ ...chuseok, date: '2026-09-30', name: '테스트공휴일' }]))
+      mockedDaily.mockResolvedValue(dailyRes([{ date: '2026-09-29', income: 1000, expense: 12000, net: -11000 }]))
+      renderPage()
+
+      await user.click(within(screen.getByRole('group', { name: '보기 전환' })).getByRole('button', { name: '주' }))
+
+      await waitFor(() => expect(mockedDaily).toHaveBeenLastCalledWith({ from: '2026-09-27', to: '2026-10-03' }))
+      expect(await screen.findByText('-12,000')).toHaveClass('text-red-500')
+      expect(screen.getByText('+1,000')).toHaveClass('text-blue-500')
+      expect(screen.getByText('테스트공휴일')).toHaveClass('text-red-500')
+      // 주·일 머리글은 드릴다운 button 안이라 링크를 중첩하지 않는다
+      expect(screen.queryByRole('link', { name: /가계부 지출/ })).not.toBeInTheDocument()
+      expect(screen.getByText('-12,000').closest('a')).toBeNull()
+    })
+
+    it('render_jobApplications_showsAllDayItemWithStatus', async () => {
+      mockedJobs.mockResolvedValue([jobApplication])
+      renderPage()
+
+      const item = await screen.findByText(JOB_TITLE)
+      expect(item.closest('.rbc-event')).toHaveStyle({ backgroundColor: '#8e24aa' })
+      expect(mockedJobs).toHaveBeenCalledWith('2026-08-30', '2026-10-03')
+    })
+
+    it('onToggle_jobApplicationsOff_hidesItems', async () => {
+      const user = userEvent.setup()
+      mockedJobs.mockResolvedValue([jobApplication])
+      renderPage()
+      await screen.findByText(JOB_TITLE)
+
+      await user.click(layerButton('구직활동'))
+
+      expect(screen.queryByText(JOB_TITLE)).not.toBeInTheDocument()
+    })
+
+    it('onSelectEvent_jobApplication_navigatesToJobApplicationEdit', async () => {
+      const user = userEvent.setup()
+      mockedJobs.mockResolvedValue([jobApplication])
+      renderWithRoutes()
+
+      await user.click(await screen.findByText(JOB_TITLE))
+
+      expect(await screen.findByTestId('location')).toHaveTextContent('/job-applications?id=7')
+      expect(mockedGet).not.toHaveBeenCalled()
+    })
+
+    it('render_oneOverlayFails_showsStatusAndKeepsOtherLayers', async () => {
+      mockedSpecialDays.mockResolvedValue(specialDaysRes([chuseok]))
+      mockedDaily.mockRejectedValue(new Error('Network Error'))
+      mockedJobs.mockResolvedValue([jobApplication])
+      mockedRange.mockResolvedValue([summary()])
+      renderPage()
+
+      expect(await screen.findByRole('status')).toHaveTextContent('가계부 합계를 불러오지 못했습니다.')
+      expect(await screen.findByText('추석')).toBeInTheDocument()
+      expect(await screen.findByText(JOB_TITLE)).toBeInTheDocument()
+      expect(await screen.findByText('팀 회의')).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
   })
 })

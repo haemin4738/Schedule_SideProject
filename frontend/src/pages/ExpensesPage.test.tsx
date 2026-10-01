@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import dayjs from 'dayjs'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ExpensesPage from './ExpensesPage'
 import {
@@ -80,10 +80,16 @@ const salary: ExpenseSummary = {
   description: null,
 }
 
-function renderPage() {
+function LocationDisplay() {
+  const location = useLocation()
+  return <div data-testid="location">{location.pathname + location.search}</div>
+}
+
+function renderPage(initialEntry = '/expenses') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <ExpensesPage />
+      <LocationDisplay />
     </MemoryRouter>,
   )
 }
@@ -326,6 +332,46 @@ describe('ExpensesPage', () => {
       expect(screen.getByText('25%')).toBeInTheDocument()
       expect(screen.queryByText('지출 내역이 없습니다')).not.toBeInTheDocument()
     })
+  })
+
+  describe('?month 초기 월', () => {
+    it('render_withMonthParam_startsAtThatMonth', async () => {
+      mockListResponse([])
+      renderPage('/expenses?month=2025-02')
+
+      expect(screen.getByText('2025년 2월')).toBeInTheDocument()
+      await waitFor(() => {
+        expect(mockedGetExpenses).toHaveBeenCalledWith(
+          expect.objectContaining({ from: '2025-02-01', to: '2025-02-28', page: 0 }),
+        )
+      })
+      expect(mockedGetMonthlySummary).toHaveBeenCalledWith({ from: '2025-02', to: '2025-02' })
+    })
+
+    it('moveMonth_withMonthParam_movesAndClearsParam', async () => {
+      const user = userEvent.setup()
+      mockListResponse([])
+      renderPage('/expenses?month=2025-02')
+
+      await user.click(screen.getByRole('button', { name: '다음 달' }))
+
+      expect(screen.getByText('2025년 3월')).toBeInTheDocument()
+      // 새로고침해도 캘린더에서 넘어온 달로 되돌아가지 않게 주소에서 지운다
+      expect(screen.getByTestId('location')).toHaveTextContent(/^\/expenses$/)
+    })
+
+    it.each(['2025-13', '2025-2', 'abc', '2025-02-01', ''])(
+      'render_withInvalidMonthParam_%s_startsAtCurrentMonth',
+      async (param) => {
+        mockListResponse([])
+        renderPage(`/expenses?month=${param}`)
+
+        expect(screen.getByText(thisMonth.format('YYYY년 M월'))).toBeInTheDocument()
+        await waitFor(() => {
+          expect(mockedGetExpenses).toHaveBeenCalledWith(expect.objectContaining({ from: FROM, to: TO }))
+        })
+      },
+    )
   })
 
   describe('필터/월 이동/페이지', () => {
