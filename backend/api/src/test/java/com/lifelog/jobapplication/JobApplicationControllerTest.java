@@ -149,6 +149,30 @@ class JobApplicationControllerTest {
                 .andExpect(jsonPath("$.error").doesNotExist());
     }
 
+    private JobApplicationRequest withMemo(String memo) {
+        return new JobApplicationRequest("회사A", "백엔드 개발자",
+                JobApplicationStatus.APPLIED, LocalDate.of(2026, 1, 10), null, memo);
+    }
+
+    @Test
+    void create_whenMemoAt10000_returns201() throws Exception {
+        when(jobApplicationService.create(any(), any())).thenReturn(sampleResponse());
+
+        mockMvc.perform(post("/api/v1/job-applications").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(withMemo("가".repeat(10_000)))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void create_whenMemoOver10000_returns400WithValidationMessage() throws Exception {
+        mockMvc.perform(post("/api/v1/job-applications").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(withMemo("가".repeat(10_001)))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("메모는 10,000자 이하여야 합니다."));
+    }
+
     @Test
     void create_whenCompanyNameBlank_returns400WithValidationMessage() throws Exception {
         JobApplicationRequest invalid = new JobApplicationRequest("", "백엔드 개발자",

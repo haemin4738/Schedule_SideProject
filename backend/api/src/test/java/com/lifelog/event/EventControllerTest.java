@@ -30,6 +30,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -244,6 +245,77 @@ class EventControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("종료 시간은 시작 시간보다 빠를 수 없습니다."));
         verifyNoInteractions(eventService);
+    }
+
+    private EventRequest withFields(String description, String location, String color) {
+        return new EventRequest("팀 회의", description,
+                LocalDateTime.of(2026, 1, 10, 10, 0), LocalDateTime.of(2026, 1, 10, 11, 0),
+                false, location, color, EventCategory.WORK);
+    }
+
+    private void expectCreate400(EventRequest request, String message) throws Exception {
+        mockMvc.perform(post("/api/v1/events").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value(message));
+        verifyNoInteractions(eventService);
+    }
+
+    @Test
+    void create_whenLocationAtLimits_accepts255AndRejects256() throws Exception {
+        when(eventService.create(any(), any())).thenReturn(sampleResponse());
+        mockMvc.perform(post("/api/v1/events").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(withFields(null, "가".repeat(255), null))))
+                .andExpect(status().isCreated());
+
+        reset(eventService);
+        expectCreate400(withFields(null, "가".repeat(256), null), "장소는 255자 이하여야 합니다.");
+    }
+
+    @Test
+    void create_whenDescriptionAtLimits_accepts10000AndRejects10001() throws Exception {
+        when(eventService.create(any(), any())).thenReturn(sampleResponse());
+        mockMvc.perform(post("/api/v1/events").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(withFields("가".repeat(10_000), null, null))))
+                .andExpect(status().isCreated());
+
+        reset(eventService);
+        expectCreate400(withFields("가".repeat(10_001), null, null), "설명은 10,000자 이하여야 합니다.");
+    }
+
+    @Test
+    void create_whenColorNull_acceptsAsCategoryDefault() throws Exception {
+        when(eventService.create(any(), any())).thenReturn(sampleResponse());
+
+        mockMvc.perform(post("/api/v1/events").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(withFields(null, null, null))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void create_whenColorLowercaseHex_accepts() throws Exception {
+        when(eventService.create(any(), any())).thenReturn(sampleResponse());
+
+        mockMvc.perform(post("/api/v1/events").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(withFields(null, null, "#039be5"))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void create_whenColorBlank_returns400() throws Exception {
+        // 빈 문자열은 '기본 색'이 아니다 — 클라이언트는 기본 색을 null 로 보낸다
+        expectCreate400(withFields(null, null, ""), "색상은 #RRGGBB 형식이어야 합니다.");
+    }
+
+    @Test
+    void create_whenColorMalformed_returns400() throws Exception {
+        expectCreate400(withFields(null, null, "#FFF"), "색상은 #RRGGBB 형식이어야 합니다.");
+        expectCreate400(withFields(null, null, "red"), "색상은 #RRGGBB 형식이어야 합니다.");
     }
 
     @Test

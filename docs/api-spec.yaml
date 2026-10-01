@@ -381,7 +381,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse_EventResponse'
         '400':
-          description: 유효성 오류
+          description: 유효성 오류 (제목 누락·길이 초과, 종료<시작, 장소·설명 길이 초과, 색상 형식 오류)
           content:
             application/json:
               schema:
@@ -429,6 +429,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponse_EventResponse'
+        '400':
+          description: 유효성 오류 (제목 누락·길이 초과, 종료<시작, 장소·설명 길이 초과, 색상 형식 오류)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
         '403':
           description: 본인 일정 아님
           content:
@@ -1506,6 +1512,7 @@ components:
         description:
           type: string
           nullable: true
+          maxLength: 10000
           example: 주간 스프린트 리뷰
         startAt:
           type: string
@@ -1523,11 +1530,13 @@ components:
         location:
           type: string
           nullable: true
+          maxLength: 255
           example: 강남구 선릉
         color:
           type: string
           nullable: true
-          description: HEX 색상 코드
+          pattern: '^#[0-9A-Fa-f]{6}$'
+          description: HEX 색상 코드 #RRGGBB. null 이면 카테고리 기본 색. 빈 문자열·형식 불일치는 400
           example: '#4A90E2'
         eventCategory:
           type: string
@@ -1753,7 +1762,7 @@ components:
           $ref: '#/components/schemas/JobApplicationStatus'
         appliedAt: { type: string, format: date, example: '2026-09-10' }
         jobPostingUrl: { type: string, maxLength: 500, nullable: true, example: 'https://example.com/jobs/1' }
-        memo: { type: string, nullable: true, example: 1차 면접 9/20 }
+        memo: { type: string, nullable: true, maxLength: 10000, example: 1차 면접 9/20 }
 
     JobApplicationResponse:
       type: object
