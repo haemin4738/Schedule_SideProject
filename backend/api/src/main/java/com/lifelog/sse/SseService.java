@@ -22,6 +22,14 @@ public class SseService {
         emitter.onCompletion(() -> emitters.remove(userId, emitter));
         emitter.onTimeout(() -> emitters.remove(userId, emitter));
         emitter.onError(e -> emitters.remove(userId, emitter));
+        // 첫 이벤트를 보내기 전까지는 응답 헤더가 나가지 않아 클라이언트가 연결됐는지 알 수 없다.
+        // 바로 CONNECTED 를 보내 연결(재연결) 즉시 끊겨 있던 동안의 변경을 다시 불러오게 한다 (모르는 이벤트는 클라이언트가 무시)
+        try {
+            emitter.send(SseEmitter.event().name("CONNECTED").data(""));
+        } catch (IOException | IllegalStateException e) {
+            emitters.remove(userId, emitter);
+            log.debug("SSE 연결 직후 전송 실패 userId={}", userId);
+        }
         return emitter;
     }
 

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -33,21 +31,19 @@ class CalendarPage extends ConsumerStatefulWidget {
 }
 
 class _CalendarPageState extends ConsumerState<CalendarPage> {
-  Timer? _timer;
   DateTime _selected = DateTime.now();
+  // 실시간 갱신은 eventsProvider 의 SSE 가 맡는다. 백그라운드에서는 iOS 가 연결을 끊으므로 앱으로 돌아오면 다시 불러온다
+  late final AppLifecycleListener _lifecycle;
 
   @override
   void initState() {
     super.initState();
-    // ponytail: 30s polling; replace with SSE when eventsource package is available
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
-      ref.read(eventsProvider.notifier).refresh();
-    });
+    _lifecycle = AppLifecycleListener(onResume: () => ref.read(eventsProvider.notifier).refresh());
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _lifecycle.dispose();
     super.dispose();
   }
 

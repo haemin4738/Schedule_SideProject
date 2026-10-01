@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/core/network/sse_client.dart';
 import 'package:mobile/features/calendar/event_category.dart';
 import 'package:mobile/features/calendar/provider/events_provider.dart';
 import 'package:flutter/material.dart' show Color, FlutterError, FlutterErrorDetails;
@@ -432,5 +433,49 @@ void main() {
 
     expect(reported, isEmpty);
     notifier.dispose();
+  });
+
+  group('실시간(SSE)', () {
+    late StreamController<SseEvent> changes;
+
+    EventsNotifier createLive() {
+      adapter = FakeHttpAdapter((o) => handler(o));
+      changes = StreamController<SseEvent>();
+      return EventsNotifier(initialMonth: DateTime(2026, 10, 15), dio: fakeDio(adapter), changes: (_) => changes.stream);
+    }
+
+    int eventRequests() => adapter.requestsOf('GET', _events).length;
+
+    test('changes_첫연결은건너뛰고_REFRESH와재연결때다시조회한다', () async {
+      final notifier = createLive();
+      await until(() => !notifier.state.isLoading);
+      expect(eventRequests(), 1);
+
+      changes.add(const SseEvent(sseOpenEvent, ''));
+      await Future<void>.delayed(Duration.zero);
+      expect(eventRequests(), 1);
+
+      changes.add(const SseEvent('REFRESH', ''));
+      await until(() => eventRequests() == 2);
+
+      // 끊겼다 다시 연결되면 그동안의 변경을 따라잡는다
+      changes.add(const SseEvent(sseOpenEvent, ''));
+      await until(() => eventRequests() == 3);
+
+      // 모르는 이벤트는 무시한다
+      changes.add(const SseEvent('PING', ''));
+      await Future<void>.delayed(Duration.zero);
+      expect(eventRequests(), 3);
+      notifier.dispose();
+    });
+
+    test('dispose_실시간구독을끊는다', () async {
+      final notifier = createLive();
+      await until(() => !notifier.state.isLoading);
+
+      notifier.dispose();
+
+      expect(changes.hasListener, isFalse);
+    });
   });
 }
