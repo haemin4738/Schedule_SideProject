@@ -367,7 +367,6 @@ describe('EventFormModal', () => {
     expect(title).toHaveFocus()
   })
 
-
   it('render_textInputs_haveBackendLengthLimits', () => {
     renderCreate()
 

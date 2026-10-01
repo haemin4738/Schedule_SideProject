@@ -237,8 +237,9 @@ export default function JobApplicationsPage() {
           </div>
           <div>
             <input
-              {...register('memo', { maxLength: 10_000 })}
-              // 백엔드 JobApplicationRequest.memo @Size(max = 10_000)
+              {...register('memo')}
+              // 백엔드 JobApplicationRequest.memo @Size(max = 10_000). 폼 규칙은 두지 않는다 —
+              // 이미 한도를 넘는 기존 메모를 수정할 때 이유 없이 제출이 막히지 않게 하고, 서버 400 메시지로 안내한다
               maxLength={10_000}
               placeholder="메모"
               className="w-full rounded border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400"
