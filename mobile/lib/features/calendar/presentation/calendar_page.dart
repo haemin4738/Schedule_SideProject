@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/features/auth/provider/auth_provider.dart';
+import 'package:mobile/features/calendar/presentation/event_form_sheet.dart';
 import 'package:mobile/features/calendar/provider/events_provider.dart';
 
 const _weekdays = ['일', '월', '화', '수', '목', '금', '토'];
@@ -57,6 +58,27 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     });
   }
 
+  /// 생성(existing 없음) 또는 수정 시트를 연다. 수정은 설명·장소가 유실되지 않게 단건을 조회한 뒤 연다
+  Future<void> _openForm({EventItem? item}) async {
+    EventDetail? detail;
+    if (item != null) {
+      try {
+        detail = await ref.read(eventsProvider.notifier).getDetail(item.id);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(eventErrorMessage(e))));
+        }
+        return;
+      }
+    }
+    if (!mounted) return;
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => EventFormSheet(existing: detail, defaultDate: _selected),
+    );
+  }
+
   void _goToToday() {
     ref.read(eventsProvider.notifier).goToToday();
     setState(() => _selected = DateTime.now());
@@ -68,6 +90,11 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
     final month = ref.read(eventsProvider.notifier).month;
 
     return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        tooltip: '일정 추가',
+        onPressed: () => _openForm(),
+        child: const Icon(Icons.add),
+      ),
       appBar: AppBar(
         title: const Text('캘린더'),
         actions: [
@@ -122,6 +149,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                 data: data,
                 selected: _selected,
                 onSelect: (day) => setState(() => _selected = day),
+                onOpenEvent: (item) => _openForm(item: item),
               ),
             ),
           ),
@@ -198,12 +226,14 @@ class _MonthBody extends StatelessWidget {
     required this.data,
     required this.selected,
     required this.onSelect,
+    required this.onOpenEvent,
   });
 
   final DateTime month;
   final CalendarMonthState data;
   final DateTime selected;
   final ValueChanged<DateTime> onSelect;
+  final ValueChanged<EventItem> onOpenEvent;
 
   @override
   Widget build(BuildContext context) {
@@ -249,7 +279,7 @@ class _MonthBody extends StatelessWidget {
               ),
             ),
             const Divider(height: 1),
-            Expanded(child: _DayDetail(day: selected, data: data)),
+            Expanded(child: _DayDetail(day: selected, data: data, onOpenEvent: onOpenEvent)),
           ],
         );
       },
@@ -342,8 +372,7 @@ class _DayCell extends StatelessWidget {
                                   width: 5,
                                   height: 5,
                                   margin: const EdgeInsets.symmetric(horizontal: 1, vertical: 2),
-                                  decoration:
-                                      BoxDecoration(color: Colors.indigo.shade400, shape: BoxShape.circle),
+                                  decoration: BoxDecoration(color: events[i].displayColor, shape: BoxShape.circle),
                                 ),
                             ],
                           ),
@@ -360,16 +389,19 @@ class _DayCell extends StatelessWidget {
 
 /// 선택한 날의 특일과 일정 목록
 class _DayDetail extends StatelessWidget {
-  const _DayDetail({required this.day, required this.data});
+  const _DayDetail({required this.day, required this.data, required this.onOpenEvent});
 
   final DateTime day;
   final CalendarMonthState data;
+  final ValueChanged<EventItem> onOpenEvent;
 
   @override
   Widget build(BuildContext context) {
     final events = data.eventsOn(day);
     final specials = data.specialDaysOn(day);
     return ListView(
+      // 마지막 일정이 '일정 추가' 버튼에 가리지 않게 아래 여백을 둔다
+      padding: const EdgeInsets.only(bottom: 80),
       children: [
         ListTile(
           dense: true,
@@ -386,9 +418,10 @@ class _DayDetail extends StatelessWidget {
           ),
         for (final event in events)
           ListTile(
-            leading: Icon(Icons.circle, size: 10, color: Colors.indigo.shade400),
+            leading: Icon(Icons.circle, size: 10, color: event.displayColor),
             title: Text(event.title),
             subtitle: Text(event.allDay ? '종일' : _timeLabel(event)),
+            onTap: () => onOpenEvent(event),
           ),
       ],
     );

@@ -1,7 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/painting.dart';
 import 'package:mobile/core/network/dio_client.dart';
+import 'package:mobile/features/calendar/event_category.dart';
 
 final _dateTime = DateFormat("yyyy-MM-dd'T'HH:mm:ss");
 final _date = DateFormat('yyyy-MM-dd');
@@ -13,6 +15,8 @@ class EventItem {
   final DateTime startAt;
   final DateTime? endAt;
   final bool allDay;
+  final String? color;
+  final EventCategory? eventCategory;
 
   const EventItem({
     required this.id,
@@ -20,6 +24,8 @@ class EventItem {
     required this.startAt,
     this.endAt,
     this.allDay = false,
+    this.color,
+    this.eventCategory,
   });
 
   factory EventItem.fromJson(Map<String, dynamic> json) => EventItem(
@@ -28,7 +34,11 @@ class EventItem {
         startAt: DateTime.parse(json['startAt'] as String),
         endAt: json['endAt'] == null ? null : DateTime.parse(json['endAt'] as String),
         allDay: json['allDay'] as bool? ?? false,
+        color: json['color'] as String?,
+        eventCategory: parseEventCategory(json['eventCategory']),
       );
+
+  Color get displayColor => resolveEventColor(color, eventCategory);
 
   /// [day] 하루와 겹치는지. 종료가 없으면 시작한 날에만 보인다.
   /// 종료는 웹 캘린더처럼 경계 미포함 — 자정 정각에 끝나는 일정은 다음 날에 그리지 않는다
@@ -41,6 +51,83 @@ class EventItem {
     if (end == null) return !startAt.isBefore(dayStart);
     return end.isAfter(dayStart) || (end == startAt && !startAt.isBefore(dayStart));
   }
+}
+
+/// 단건 조회 응답 (백엔드 EventResponse) — 목록에 없는 설명·장소를 포함한다. 수정 폼은 반드시 이것으로 채운다
+class EventDetail extends EventItem {
+  final String? description;
+  final String? location;
+
+  const EventDetail({
+    required super.id,
+    required super.title,
+    required super.startAt,
+    super.endAt,
+    super.allDay,
+    super.color,
+    super.eventCategory,
+    this.description,
+    this.location,
+  });
+
+  factory EventDetail.fromJson(Map<String, dynamic> json) {
+    final base = EventItem.fromJson(json);
+    return EventDetail(
+      id: base.id,
+      title: base.title,
+      startAt: base.startAt,
+      endAt: base.endAt,
+      allDay: base.allDay,
+      color: base.color,
+      eventCategory: base.eventCategory,
+      description: json['description'] as String?,
+      location: json['location'] as String?,
+    );
+  }
+}
+
+/// 생성·수정 요청 본문 (백엔드 EventRequest). 날짜는 타임존 없는 LocalDateTime 문자열
+class EventInput {
+  final String title;
+  final bool allDay;
+  final DateTime startAt;
+  final DateTime? endAt;
+  final EventCategory eventCategory;
+  final String? color;
+  final String? location;
+  final String? description;
+
+  const EventInput({
+    required this.title,
+    required this.allDay,
+    required this.startAt,
+    required this.endAt,
+    required this.eventCategory,
+    this.color,
+    this.location,
+    this.description,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'allDay': allDay,
+        'startAt': _dateTime.format(startAt),
+        'endAt': endAt == null ? null : _dateTime.format(endAt!),
+        'eventCategory': eventCategory.name,
+        'color': color,
+        'location': location,
+        'description': description,
+      };
+}
+
+/// 서버 envelope 의 error 메시지(한국어)를 그대로 꺼낸다. 없으면 일반 안내 문구
+String eventErrorMessage(Object error) {
+  if (error is DioException) {
+    final data = error.response?.data;
+    if (data is Map && data['error'] is String) return data['error'] as String;
+    return '서버와 통신할 수 없습니다.';
+  }
+  return '요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.';
 }
 
 /// 공휴일·기념일·24절기 (백엔드 SpecialDayResponse)
@@ -162,6 +249,26 @@ class EventsNotifier extends StateNotifier<AsyncValue<CalendarMonthState>> {
       if (page + 1 >= totalPages) return (events, false);
     }
     return (events, true);
+  }
+
+  Future<EventDetail> getDetail(int id) async {
+    final res = await _dio.get('/api/v1/events/$id');
+    return EventDetail.fromJson(res.data['data'] as Map<String, dynamic>);
+  }
+
+  Future<void> create(EventInput input) async {
+    await _dio.post('/api/v1/events', data: input.toJson());
+    if (mounted) await refresh();
+  }
+
+  Future<void> update(int id, EventInput input) async {
+    await _dio.put('/api/v1/events/$id', data: input.toJson());
+    if (mounted) await refresh();
+  }
+
+  Future<void> delete(int id) async {
+    await _dio.delete('/api/v1/events/$id');
+    if (mounted) await refresh();
   }
 
   /// 특일은 부가 정보라 실패해도 일정 표시는 계속한다
