@@ -25,5 +25,6 @@ public record JobApplicationRequest(
         @Size(max = 500, message = "채용공고 URL은 500자 이하여야 합니다.")
         String jobPostingUrl,
 
+        @Size(max = 10_000, message = "메모는 10,000자 이하여야 합니다.")
         String memo
 ) {}
