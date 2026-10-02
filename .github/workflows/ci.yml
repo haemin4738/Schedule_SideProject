@@ -16,6 +16,9 @@ on:
       - 'mobile/**'
       - '.github/workflows/**'
 
+permissions:
+  contents: read
+
 jobs:
   # 바뀐 영역만 검사한다. 비교 기준을 못 찾거나 워크플로우가 바뀌면 전부 검사.
   changes:
