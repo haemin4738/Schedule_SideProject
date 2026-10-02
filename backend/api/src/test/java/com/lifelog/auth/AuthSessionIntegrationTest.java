@@ -291,6 +291,35 @@ class AuthSessionIntegrationTest {
         refresh(next);
     }
 
+    // ---------- 세션 상한 ----------
+
+    @Test
+    void login_whenOverSessionCap_endsLeastRecentlyUsedSessionOnly() throws Exception {
+        signup();
+        String oldButActive = login(lastEmail);
+        clock.advance(Duration.ofSeconds(1));
+        String idle = login(lastEmail);
+        List<String> others = new ArrayList<>();
+        for (int i = 2; i < AuthTokenService.MAX_SESSIONS_PER_USER; i++) {
+            clock.advance(Duration.ofSeconds(1));
+            others.add(login(lastEmail));
+        }
+        // 가장 먼저 로그인했지만 최근에 쓴 세션
+        clock.advance(Duration.ofSeconds(1));
+        oldButActive = refresh(oldButActive);
+
+        clock.advance(Duration.ofSeconds(1));
+        String newest = login(lastEmail);
+
+        // 상한(10) 초과 → 가장 오래 쓰지 않은 세션만 조용히 종료(보안 알림·전체 폐기 없음)
+        expectError(refreshRequest(idle), 401, "INVALID_REFRESH_TOKEN");
+        refresh(oldButActive);
+        refresh(newest);
+        for (String other : others) {
+            refresh(other);
+        }
+    }
+
     // ---------- 로그아웃 ----------
 
     @Test

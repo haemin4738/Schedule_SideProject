@@ -11,12 +11,16 @@ public interface RefreshSessionStore {
 
     /**
      * 새 세션을 저장하고 사용자 세션 인덱스에 등록한다. 만료된 인덱스 멤버는 이때 정리된다.
+     * 저장 후 사용자의 세션이 maxSessions 를 넘으면 마지막 사용(회전, 없으면 로그인) 시각이 가장 오래된 세션부터
+     * 삭제한다(tombstone 없음 — 그 기기의 다음 refresh 는 NOT_FOUND). 방금 만든 세션은 삭제 대상이 아니다.
      *
-     * @param session 모든 필드 필수 (sessionId/tokenId 는 공백 불가)
-     * @param ttl     세션 TTL (양수)
-     * @throws IllegalArgumentException 필드 누락/공백 또는 ttl 이 null·0 이하
+     * @param session     모든 필드 필수 (sessionId/tokenId 는 공백 불가)
+     * @param ttl         세션 TTL (양수)
+     * @param maxSessions 사용자당 최대 세션 수 (1 이상)
+     * @return 상한 초과로 삭제한 세션 수
+     * @throws IllegalArgumentException 필드 누락/공백, ttl 이 null·0 이하, maxSessions 가 1 미만
      */
-    void create(RefreshSession session, Duration ttl);
+    int create(RefreshSession session, Duration ttl, int maxSessions);
 
     /**
      * 제시한 refresh 토큰 jti 로 세션을 회전한다.

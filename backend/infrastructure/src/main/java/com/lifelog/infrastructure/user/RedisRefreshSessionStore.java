@@ -73,14 +73,38 @@ public class RedisRefreshSessionStore implements RefreshSessionStore {
             end
             """;
 
-    // KEYS: 1=session, 2=index / ARGV: 1=sid, 2=jti, 3=authTime(ms), 4=ttl(ms), 5=session key prefix
+    // KEYS: 1=session, 2=index / ARGV: 1=sid, 2=jti, 3=authTime(ms), 4=ttl(ms), 5=session key prefix, 6=maxSessions
+    // 반환: 상한 초과로 삭제한 세션 수. 마지막 사용 시각(rotatedAt, 없으면 authTime)이 오래된 순, 같으면 sid 순으로 삭제
+    // 주의: 인덱스 멤버로 조립한 세션 키에 접근한다 — `#!lua` shebang(flags) 추가 금지, 해시태그 {u:<userId>} 유지
     private static final RedisScript<Long> CREATE_SCRIPT = RedisScript.of(SYNC_INDEX_FUNCTION + """
             redis.call('DEL', KEYS[1])
             redis.call('HSET', KEYS[1], 'jti', ARGV[2], 'authTime', ARGV[3])
             redis.call('PEXPIRE', KEYS[1], ARGV[4])
             redis.call('SADD', KEYS[2], ARGV[1])
             syncIndex(KEYS[2], ARGV[5])
-            return 1
+            local excess = redis.call('SCARD', KEYS[2]) - tonumber(ARGV[6])
+            if excess <= 0 then
+                return 0
+            end
+            local others = {}
+            for _, member in ipairs(redis.call('SMEMBERS', KEYS[2])) do
+                if member ~= ARGV[1] then
+                    local times = redis.call('HMGET', ARGV[5] .. member, 'rotatedAt', 'authTime')
+                    table.insert(others, {member, tonumber(times[1]) or tonumber(times[2]) or 0})
+                end
+            end
+            table.sort(others, function(a, b)
+                if a[2] == b[2] then
+                    return a[1] < b[1]
+                end
+                return a[2] < b[2]
+            end)
+            for i = 1, excess do
+                redis.call('DEL', ARGV[5] .. others[i][1])
+                redis.call('SREM', KEYS[2], others[i][1])
+            end
+            syncIndex(KEYS[2], ARGV[5])
+            return excess
             """, Long.class);
 
     // KEYS: 1=session, 2=index, 3=tombstone(sid)
@@ -164,7 +188,7 @@ public class RedisRefreshSessionStore implements RefreshSessionStore {
     }
 
     @Override
-    public void create(RefreshSession session, Duration ttl) {
+    public int create(RefreshSession session, Duration ttl, int maxSessions) {
         if (session == null || session.userId() == null || isBlank(session.sessionId())
                 || isBlank(session.tokenId()) || session.authTime() == null) {
             throw new IllegalArgumentException("session fields are required");
@@ -172,15 +196,20 @@ public class RedisRefreshSessionStore implements RefreshSessionStore {
         if (!isPositive(ttl)) {
             throw new IllegalArgumentException("ttl must be positive");
         }
+        if (maxSessions < 1) {
+            throw new IllegalArgumentException("maxSessions must be at least 1");
+        }
         Long userId = session.userId();
         String sessionId = session.sessionId();
-        execute(() -> redis.execute(CREATE_SCRIPT,
+        Long evicted = execute(() -> redis.execute(CREATE_SCRIPT,
                 List.of(sessionKey(userId, sessionId), indexKey(userId)),
                 sessionId,
                 session.tokenId(),
                 String.valueOf(session.authTime().toEpochMilli()),
                 String.valueOf(ttl.toMillis()),
-                sessionKeyPrefix(userId)));
+                sessionKeyPrefix(userId),
+                String.valueOf(maxSessions)));
+        return evicted == null ? 0 : evicted.intValue();
     }
 
     @Override

@@ -33,6 +33,9 @@ public class AuthTokenService {
     /** 회전 직후 직전 refresh 토큰으로도 재발급을 허용하는 겹침 구간 (탭 동시 refresh, 응답 유실 재시도) */
     static final Duration ROTATION_OVERLAP = Duration.ofSeconds(30);
 
+    /** 사용자당 동시 로그인 세션 상한. 넘으면 가장 오래 쓰지 않은 세션부터 끝낸다 */
+    static final int MAX_SESSIONS_PER_USER = 10;
+
     static final String INVALID_REFRESH_TOKEN_MESSAGE = "유효하지 않은 refresh 토큰입니다.";
     static final String SESSION_REVOKED_MESSAGE = "보안을 위해 모든 기기에서 로그아웃되었습니다. 다시 로그인해 주세요.";
 
@@ -48,7 +51,11 @@ public class AuthTokenService {
         String tokenId = newId();
         Instant expiresAt = tokenProvider.refreshExpiresAt(now, now);
 
-        refreshSessionStore.create(new RefreshSession(userId, sessionId, tokenId, now), Duration.between(now, expiresAt));
+        int evicted = refreshSessionStore.create(new RefreshSession(userId, sessionId, tokenId, now),
+                Duration.between(now, expiresAt), MAX_SESSIONS_PER_USER);
+        if (evicted > 0) {
+            log.info("세션 상한 초과로 오래된 세션 종료: userId={}, count={}", userId, evicted);
+        }
         return TokenResponse.of(
                 tokenProvider.createAccessToken(userId),
                 tokenProvider.createRefreshToken(userId, sessionId, tokenId, now, expiresAt));
