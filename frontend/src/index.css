@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @import "react-big-calendar/lib/css/react-big-calendar.css";
 
+/* iOS Safari 는 16px 미만 입력칸에 포커스하면 화면을 확대한다 — 터치 가능한 기기(트랙패드를 붙인 iPad 포함)에서만 16px 로.
+   레이어 밖 규칙이라 Tailwind 유틸리티(text-sm 등, @layer utilities)보다 우선한다 */
+@media (any-pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* react-big-calendar 기본 스타일을 구글 캘린더 느낌으로 덮어쓴다 (.lifelog-calendar 범위 안에서만) */
 .lifelog-calendar .rbc-month-view,
 .lifelog-calendar .rbc-time-view {
