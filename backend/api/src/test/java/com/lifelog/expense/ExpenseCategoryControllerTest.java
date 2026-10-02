@@ -84,6 +84,23 @@ class ExpenseCategoryControllerTest {
     }
 
     @Test
+    void addDefaults_whenAuthenticated_returnsFullListEnvelope() throws Exception {
+        when(expenseCategoryService.addDefaults(USER_ID)).thenReturn(List.of(sample()));
+
+        mockMvc.perform(post(BASE + "/defaults").with(asUser()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data[0].name").value("식비"));
+    }
+
+    @Test
+    void addDefaults_withoutAuthentication_returnsUnauthorized() throws Exception {
+        mockMvc.perform(post(BASE + "/defaults"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(expenseCategoryService);
+    }
+
+    @Test
     void list_whenTypeGiven_passesTypeToService() throws Exception {
         when(expenseCategoryService.list(USER_ID, ExpenseType.INCOME)).thenReturn(List.of());
 

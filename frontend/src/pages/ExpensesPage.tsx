@@ -1,4 +1,5 @@
 import {
+  addDefaultExpenseCategories,
   deleteExpense,
   getCategorySummary,
   getExpense,
@@ -376,6 +377,10 @@ export default function ExpensesPage() {
           defaultDate={defaultFormDate}
           categories={categories}
           categoriesError={categoriesError}
+          onAddDefaultCategories={async () => {
+            await addDefaultExpenseCategories()
+            await loadCategories()
+          }}
           onClose={() => setForm(null)}
           onSaved={() => {
             setForm(null)

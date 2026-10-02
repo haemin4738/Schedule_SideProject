@@ -39,6 +39,8 @@ interface Props {
   onManageCategories: () => void
   /** 제목 위에 붙일 내용 (캘린더의 입력 종류 탭) */
   header?: ReactNode
+  /** 카테고리가 하나도 없을 때 '기본 카테고리 추가' 버튼으로 호출 (부모가 추가 후 목록을 갱신) */
+  onAddDefaultCategories?: () => Promise<void>
 }
 
 const inputClass =
@@ -54,8 +56,23 @@ export default function ExpenseFormModal({
   onSaved,
   onManageCategories,
   header,
+  onAddDefaultCategories,
 }: Props) {
   const [formError, setFormError] = useState<string | null>(null)
+  const [addingDefaults, setAddingDefaults] = useState(false)
+
+  const addDefaults = async () => {
+    if (!onAddDefaultCategories) return
+    setFormError(null)
+    setAddingDefaults(true)
+    try {
+      await onAddDefaultCategories()
+    } catch (err) {
+      setFormError(getApiErrorMessage(err, '기본 카테고리 추가에 실패했습니다.'))
+    } finally {
+      setAddingDefaults(false)
+    }
+  }
 
   const {
     register,
@@ -162,13 +179,21 @@ export default function ExpenseFormModal({
             ) : noCategories ? (
               <div className="rounded border border-dashed p-3 text-sm text-gray-600">
                 <p>먼저 카테고리를 추가하세요.</p>
-                <button
-                  type="button"
-                  onClick={onManageCategories}
-                  className="mt-1 text-blue-500 hover:underline"
-                >
-                  카테고리 관리로 이동
-                </button>
+                <div className="mt-1 flex flex-wrap gap-3">
+                  {onAddDefaultCategories && (
+                    <button
+                      type="button"
+                      onClick={() => void addDefaults()}
+                      disabled={addingDefaults}
+                      className="text-blue-500 hover:underline disabled:opacity-50"
+                    >
+                      기본 카테고리 추가
+                    </button>
+                  )}
+                  <button type="button" onClick={onManageCategories} className="text-blue-500 hover:underline">
+                    카테고리 관리로 이동
+                  </button>
+                </div>
               </div>
             ) : (
               <select

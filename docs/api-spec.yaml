@@ -630,6 +630,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse_Error'
 
+  /expense-categories/defaults:
+    post:
+      tags: [expenses]
+      summary: 기본 카테고리 추가
+      description: |
+        기본 카테고리(지출 13종 — 식비·카페·간식·교통비·주거·관리비·통신비·생활용품·의류·미용·건강·의료·취미·여가·교육·경조사·선물·기타,
+        수입 5종 — 급여·용돈·부수입·금융수입·기타) 중 아직 없는 것만 추가하고 전체 목록을 반환한다.
+        여러 번 호출해도 중복되지 않으며, 사용자당 상한(100개)을 넘는 만큼은 건너뛴다.
+        회원가입(이메일·소셜) 시에도 같은 기본 카테고리가 자동으로 만들어진다.
+      responses:
+        '200':
+          description: 추가 후 전체 카테고리 목록
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  data:
+                    type: array
+                    items: { type: object }
+                  error: { type: string, nullable: true, example: null }
+        '401':
+          description: 인증 필요
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+
   /expense-categories/{id}:
     parameters:
       - name: id

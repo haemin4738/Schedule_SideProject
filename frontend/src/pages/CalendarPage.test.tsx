@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CalendarPage from './CalendarPage'
 import { getEvent, getEventsInRange, type EventSummary } from '@/api/events'
-import { createExpense, getDailySummary, getExpenseCategories } from '@/api/expenses'
+import { addDefaultExpenseCategories, createExpense, getDailySummary, getExpenseCategories } from '@/api/expenses'
 import { createJobApplication, getJobApplicationsInRange, type JobApplicationSummary } from '@/api/jobApplications'
 import { getSpecialDays, type SpecialDay } from '@/api/specialDays'
 import { LAYERS_STORAGE_KEY } from '@/components/calendar/calendarLayers'
@@ -21,6 +21,7 @@ vi.mock('@/api/expenses', async (importOriginal) => ({
   getDailySummary: vi.fn(),
   getExpenseCategories: vi.fn(),
   createExpense: vi.fn(),
+  addDefaultExpenseCategories: vi.fn(),
 }))
 vi.mock('@/api/jobApplications', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/jobApplications')>()),
@@ -36,6 +37,7 @@ const mockedDaily = vi.mocked(getDailySummary)
 const mockedJobs = vi.mocked(getJobApplicationsInRange)
 const mockedCategories = vi.mocked(getExpenseCategories)
 const mockedCreateExpense = vi.mocked(createExpense)
+const mockedAddDefaults = vi.mocked(addDefaultExpenseCategories)
 const mockedCreateJob = vi.mocked(createJobApplication)
 
 const specialDaysRes = (data: SpecialDay[]) => ({ data: { success: true, data } }) as never
@@ -618,6 +620,23 @@ describe('CalendarPage', () => {
       )
       expect(mockedCategories).toHaveBeenCalledTimes(1)
       await waitFor(() => expect(mockedDaily).toHaveBeenCalledTimes(2))
+    })
+
+    it('onTabExpense_noCategories_addDefaultsShowsCategorySelect', async () => {
+      const user = userEvent.setup()
+      mockedCategories.mockResolvedValue({ data: { success: true, data: [] } } as never)
+      mockedAddDefaults.mockResolvedValue({
+        data: { success: true, data: [{ id: 5, type: 'EXPENSE', name: '식비' }] },
+      } as never)
+      renderPage()
+
+      await user.click(screen.getByRole('button', { name: /만들기/ }))
+      await user.click(entryTab('가계부'))
+      await user.click(await screen.findByRole('button', { name: '기본 카테고리 추가' }))
+
+      const select = await screen.findByLabelText('카테고리')
+      expect(within(select).getByRole('option', { name: '식비' })).toBeInTheDocument()
+      expect(mockedAddDefaults).toHaveBeenCalledTimes(1)
     })
 
     it('onTabExpense_whileLoadingCategories_showsLoadingAndDisablesSave', async () => {

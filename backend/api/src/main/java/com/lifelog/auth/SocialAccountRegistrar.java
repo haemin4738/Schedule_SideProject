@@ -1,6 +1,7 @@
 package com.lifelog.auth;
 
 import com.lifelog.common.exception.BusinessException;
+import com.lifelog.expense.ExpenseCategoryService;
 import com.lifelog.domain.user.User;
 import com.lifelog.domain.user.UserRepository;
 import com.lifelog.domain.user.social.PendingSocialLink;
@@ -24,12 +25,14 @@ public class SocialAccountRegistrar {
 
     private final UserRepository userRepository;
     private final SocialAccountRepository socialAccountRepository;
+    private final ExpenseCategoryService expenseCategoryService;
 
-    /** 신규 소셜 회원 생성 + 소셜 계정 연결 (한 트랜잭션) */
+    /** 신규 소셜 회원 생성 + 소셜 계정 연결 + 가계부 기본 카테고리 (한 트랜잭션) */
     @Transactional
     public User registerNewUser(SocialUserInfo info) {
         User user = userRepository.save(User.createSocial(info.email(), resolveName(info), info.provider()));
         socialAccountRepository.save(SocialAccount.create(user, info.provider(), info.providerUserId()));
+        expenseCategoryService.addDefaults(user);
         return user;
     }
 

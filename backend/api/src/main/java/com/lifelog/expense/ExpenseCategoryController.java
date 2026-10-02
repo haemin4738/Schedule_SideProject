@@ -37,6 +37,12 @@ public class ExpenseCategoryController {
         return ApiResponse.ok(expenseCategoryService.create(userId, request));
     }
 
+    /** 기본 카테고리 중 아직 없는 것만 추가하고 전체 목록을 반환 */
+    @PostMapping("/defaults")
+    public ApiResponse<List<ExpenseCategoryResponse>> addDefaults(@AuthenticationPrincipal Long userId) {
+        return ApiResponse.ok(expenseCategoryService.addDefaults(userId));
+    }
+
     @PutMapping("/{id}")
     public ApiResponse<ExpenseCategoryResponse> update(
             @AuthenticationPrincipal Long userId,

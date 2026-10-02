@@ -3,6 +3,7 @@ package com.lifelog.auth;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.domain.user.SignupProvider;
 import com.lifelog.domain.user.User;
+import com.lifelog.expense.ExpenseCategoryService;
 import com.lifelog.domain.user.UserRepository;
 import com.lifelog.domain.user.social.PendingSocialLink;
 import com.lifelog.domain.user.social.SocialAccount;
@@ -39,6 +40,7 @@ class SocialAccountRegistrarTest {
 
     @Mock private UserRepository userRepository;
     @Mock private SocialAccountRepository socialAccountRepository;
+    @Mock private ExpenseCategoryService expenseCategoryService;
 
     private SocialAccountRegistrar registrar;
 
@@ -46,7 +48,7 @@ class SocialAccountRegistrarTest {
 
     @BeforeEach
     void setUp() {
-        registrar = new SocialAccountRegistrar(userRepository, socialAccountRepository);
+        registrar = new SocialAccountRegistrar(userRepository, socialAccountRepository, expenseCategoryService);
     }
 
     private static User localUser(long id) {
@@ -72,6 +74,7 @@ class SocialAccountRegistrarTest {
         assertThat(captor.getValue().getUser()).isSameAs(user);
         assertThat(captor.getValue().getProvider()).isEqualTo(SocialProvider.KAKAO);
         assertThat(captor.getValue().getProviderUserId()).isEqualTo("kakao-1");
+        verify(expenseCategoryService).addDefaults(user);
     }
 
     @Test
