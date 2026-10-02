@@ -141,8 +141,13 @@ class AuthSessionIntegrationTest {
             }
         }
         try (Connection connection = dataSource.getConnection();
+             // 가입 시 만들어지는 기본 가계부 카테고리가 users 를 참조하므로 먼저 지운다
+             PreparedStatement categories = connection.prepareStatement(
+                     "DELETE c FROM expense_categories c JOIN users u ON c.user_id = u.id WHERE u.email = ?");
              PreparedStatement statement = connection.prepareStatement("DELETE FROM users WHERE email = ?")) {
             for (String email : createdEmails) {
+                categories.setString(1, email);
+                categories.executeUpdate();
                 statement.setString(1, email);
                 statement.executeUpdate();
             }

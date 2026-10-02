@@ -121,6 +121,10 @@ export const getExpenseCategories = (type?: ExpenseType) =>
 export const createExpenseCategory = (body: { type: ExpenseType; name: string }) =>
   client.post<{ success: boolean; data: ExpenseCategory }>('/api/v1/expense-categories', body)
 
+/** 기본 카테고리 중 아직 없는 것만 추가하고 전체 목록을 돌려받는다 (여러 번 호출해도 중복되지 않음) */
+export const addDefaultExpenseCategories = () =>
+  client.post<{ success: boolean; data: ExpenseCategory[] }>('/api/v1/expense-categories/defaults')
+
 export const updateExpenseCategory = (id: number, body: { name: string }) =>
   client.put<{ success: boolean; data: ExpenseCategory }>(`/api/v1/expense-categories/${id}`, body)
 

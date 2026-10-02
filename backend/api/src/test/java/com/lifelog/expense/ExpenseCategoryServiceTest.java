@@ -68,6 +68,88 @@ class ExpenseCategoryServiceTest {
                 .containsExactly(org.assertj.core.groups.Tuple.tuple(10L, "식비"));
     }
 
+    // ---------- addDefaults ----------
+
+    @Test
+    void addDefaults_whenNoCategories_createsAllDefaultsForUser() {
+        when(expenseCategoryRepository.findAllByUserIdAndType(1L, null)).thenReturn(List.of());
+
+        int added = service.addDefaults(owner);
+
+        ArgumentCaptor<ExpenseCategory> saved = ArgumentCaptor.forClass(ExpenseCategory.class);
+        verify(expenseCategoryRepository, times(DefaultExpenseCategories.ALL.size())).save(saved.capture());
+        assertThat(added).isEqualTo(DefaultExpenseCategories.ALL.size());
+        assertThat(saved.getAllValues()).allSatisfy(c -> assertThat(c.getUser()).isSameAs(owner));
+        assertThat(saved.getAllValues()).extracting(ExpenseCategory::getType, ExpenseCategory::getName)
+                .contains(org.assertj.core.groups.Tuple.tuple(ExpenseType.EXPENSE, "식비"),
+                        org.assertj.core.groups.Tuple.tuple(ExpenseType.EXPENSE, "교통비"),
+                        org.assertj.core.groups.Tuple.tuple(ExpenseType.EXPENSE, "기타"),
+                        org.assertj.core.groups.Tuple.tuple(ExpenseType.INCOME, "급여"),
+                        org.assertj.core.groups.Tuple.tuple(ExpenseType.INCOME, "기타"));
+    }
+
+    @Test
+    void addDefaults_whenSomeAlreadyExist_addsOnlyMissingOnes() {
+        when(expenseCategoryRepository.findAllByUserIdAndType(1L, null)).thenReturn(List.of(
+                category(10L, owner, ExpenseType.EXPENSE, "식비"),
+                category(11L, owner, ExpenseType.INCOME, "급여"),
+                // 같은 이름이라도 유형이 다르면 다른 카테고리 — 지출 '용돈' 이 있어도 수입 '용돈' 은 추가된다
+                category(12L, owner, ExpenseType.EXPENSE, "용돈")));
+
+        int added = service.addDefaults(owner);
+
+        ArgumentCaptor<ExpenseCategory> saved = ArgumentCaptor.forClass(ExpenseCategory.class);
+        verify(expenseCategoryRepository, times(DefaultExpenseCategories.ALL.size() - 2)).save(saved.capture());
+        assertThat(added).isEqualTo(DefaultExpenseCategories.ALL.size() - 2);
+        assertThat(saved.getAllValues()).extracting(ExpenseCategory::getName).doesNotContain("식비", "급여");
+        assertThat(saved.getAllValues()).extracting(ExpenseCategory::getType, ExpenseCategory::getName)
+                .contains(org.assertj.core.groups.Tuple.tuple(ExpenseType.INCOME, "용돈"));
+    }
+
+    @Test
+    void addDefaults_whenNearLimit_addsOnlyUpToLimit() {
+        List<ExpenseCategory> existing = new java.util.ArrayList<>();
+        for (int i = 0; i < ExpenseCategoryService.MAX_CATEGORIES_PER_USER - 3; i++) {
+            existing.add(category((long) i, owner, ExpenseType.EXPENSE, "내 카테고리 " + i));
+        }
+        when(expenseCategoryRepository.findAllByUserIdAndType(1L, null)).thenReturn(existing);
+
+        assertThat(service.addDefaults(owner)).isEqualTo(3);
+        verify(expenseCategoryRepository, times(3)).save(any(ExpenseCategory.class));
+    }
+
+    @Test
+    void addDefaults_whenAllExist_addsNothing() {
+        List<ExpenseCategory> existing = DefaultExpenseCategories.ALL.stream()
+                .map(e -> category(1L, owner, e.type(), e.name()))
+                .toList();
+        when(expenseCategoryRepository.findAllByUserIdAndType(1L, null)).thenReturn(existing);
+
+        assertThat(service.addDefaults(owner)).isZero();
+        verify(expenseCategoryRepository, never()).save(any());
+    }
+
+    @Test
+    void addDefaultsByUserId_whenCalled_returnsFullListAfterAdding() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(owner));
+        when(expenseCategoryRepository.findAllByUserIdAndType(1L, null))
+                .thenReturn(List.of())
+                .thenReturn(List.of(category(10L, owner, ExpenseType.EXPENSE, "식비")));
+
+        List<ExpenseCategoryResponse> result = service.addDefaults(1L);
+
+        assertThat(result).extracting(ExpenseCategoryResponse::name).containsExactly("식비");
+    }
+
+    @Test
+    void addDefaultsByUserId_whenUserNotFound_throwsNotFound() {
+        when(userRepository.findById(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.addDefaults(1L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(ExpenseCategoryServiceTest::statusOf).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
     @Test
     void create_whenValid_trimsNameAndSaves() {
         when(userRepository.findById(1L)).thenReturn(Optional.of(owner));

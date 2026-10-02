@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CategoryManagerModal from './CategoryManagerModal'
 import {
+  addDefaultExpenseCategories,
   createExpenseCategory,
   deleteExpenseCategory,
   updateExpenseCategory,
@@ -10,11 +11,13 @@ import {
 } from '@/api/expenses'
 
 vi.mock('@/api/expenses', () => ({
+  addDefaultExpenseCategories: vi.fn(),
   createExpenseCategory: vi.fn(),
   updateExpenseCategory: vi.fn(),
   deleteExpenseCategory: vi.fn(),
 }))
 
+const mockedAddDefaults = vi.mocked(addDefaultExpenseCategories)
 const mockedCreate = vi.mocked(createExpenseCategory)
 const mockedUpdate = vi.mocked(updateExpenseCategory)
 const mockedDelete = vi.mocked(deleteExpenseCategory)
@@ -85,6 +88,28 @@ describe('CategoryManagerModal', () => {
     })
     expect(onChanged).toHaveBeenCalled()
     expect(screen.getByPlaceholderText('새 카테고리 이름')).toHaveValue('')
+  })
+
+  it('addDefaults_whenClicked_callsApiAndNotifiesParent', async () => {
+    const user = userEvent.setup()
+    mockedAddDefaults.mockResolvedValue({} as never)
+    const { onChanged } = renderModal()
+
+    await user.click(screen.getByRole('button', { name: '기본 카테고리 추가' }))
+
+    await waitFor(() => expect(mockedAddDefaults).toHaveBeenCalledTimes(1))
+    expect(onChanged).toHaveBeenCalled()
+  })
+
+  it('addDefaults_whenFails_showsServerMessage', async () => {
+    const user = userEvent.setup()
+    mockedAddDefaults.mockRejectedValue(serverError(409, '카테고리는 최대 100개까지 생성할 수 있습니다.'))
+    const { onChanged } = renderModal()
+
+    await user.click(screen.getByRole('button', { name: '기본 카테고리 추가' }))
+
+    expect(await screen.findByText('카테고리는 최대 100개까지 생성할 수 있습니다.')).toBeInTheDocument()
+    expect(onChanged).not.toHaveBeenCalled()
   })
 
   it('add_whenNameBlank_showsValidationErrorAndDoesNotCallApi', async () => {

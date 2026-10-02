@@ -1,4 +1,5 @@
 import {
+  addDefaultExpenseCategories,
   createExpenseCategory,
   deleteExpenseCategory,
   updateExpenseCategory,
@@ -90,6 +91,8 @@ export default function CategoryManagerModal({
     await run(() => deleteExpenseCategory(category.id), '카테고리 삭제에 실패했습니다.')
   }
 
+  const onAddDefaults = () => run(addDefaultExpenseCategories, '기본 카테고리 추가에 실패했습니다.')
+
   const dialogRef = useDialog<HTMLDivElement>(onClose)
 
   const changeTab = (type: ExpenseType) => {
@@ -112,6 +115,18 @@ export default function CategoryManagerModal({
           <h2 className="text-lg font-medium">카테고리 관리</h2>
           <button type="button" onClick={onClose} className="text-sm text-gray-500 hover:underline">
             닫기
+          </button>
+        </div>
+
+        <div className="mb-3 flex items-center justify-between gap-2 rounded bg-gray-50 px-3 py-2 text-xs text-gray-600">
+          <span>식비·교통비·급여 등 자주 쓰는 카테고리 (없는 것만 추가)</span>
+          <button
+            type="button"
+            onClick={() => void onAddDefaults()}
+            disabled={isBusy}
+            className="shrink-0 rounded border border-blue-200 bg-white px-2 py-1 text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+          >
+            기본 카테고리 추가
           </button>
         </div>
 

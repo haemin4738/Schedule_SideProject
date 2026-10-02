@@ -3,13 +3,16 @@ package com.lifelog.auth;
 import com.lifelog.auth.dto.LoginRequest;
 import com.lifelog.auth.dto.LogoutRequest;
 import com.lifelog.auth.dto.RefreshRequest;
+import com.lifelog.auth.dto.SignupRequest;
 import com.lifelog.auth.dto.TokenResponse;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.domain.user.User;
 import com.lifelog.domain.user.UserRepository;
 import com.lifelog.domain.user.social.SocialProvider;
+import com.lifelog.expense.ExpenseCategoryService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -26,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,11 +41,14 @@ class AuthServiceTest {
     @Mock
     private AuthTokenService tokenService;
 
+    @Mock
+    private ExpenseCategoryService expenseCategoryService;
+
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Test
     void login_whenPasswordOver72Bytes_throwsUnauthorizedInsteadOfServerError() {
-        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService);
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService, expenseCategoryService);
         User user = User.create("user@test.com", passwordEncoder.encode("correct-password"), "사용자");
         when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
 
@@ -55,7 +62,7 @@ class AuthServiceTest {
     @Test
     void login_whenSocialOnlyUser_throwsSameUnauthorizedWithoutMatching() {
         PasswordEncoder mockEncoder = mock(PasswordEncoder.class);
-        AuthService authService = new AuthService(userRepository, mockEncoder, tokenService);
+        AuthService authService = new AuthService(userRepository, mockEncoder, tokenService, expenseCategoryService);
         User socialOnly = User.createSocial("social@test.com", "소셜", SocialProvider.KAKAO);
         when(userRepository.findByEmail("social@test.com")).thenReturn(Optional.of(socialOnly));
 
@@ -70,7 +77,7 @@ class AuthServiceTest {
 
     @Test
     void login_whenUnknownEmail_throwsSameUnauthorizedMessage() {
-        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService);
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService, expenseCategoryService);
         when(userRepository.findByEmail("none@test.com")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("none@test.com", "pw")))
@@ -80,7 +87,7 @@ class AuthServiceTest {
 
     @Test
     void login_whenLocalUserWithCorrectPassword_issuesTokens() {
-        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService);
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService, expenseCategoryService);
         User user = User.create("user@test.com", passwordEncoder.encode("correct-password"), "사용자");
         ReflectionTestUtils.setField(user, "id", 1L);
         when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
@@ -101,7 +108,7 @@ class AuthServiceTest {
 
     @Test
     void refresh_whenCalled_delegatesToTokenService() {
-        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService);
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService, expenseCategoryService);
         when(tokenService.rotate("valid.refresh.token"))
                 .thenReturn(TokenResponse.of("new.access.token", "new.refresh.token"));
 
@@ -114,7 +121,7 @@ class AuthServiceTest {
 
     @Test
     void refresh_whenTokenServiceRejects_propagatesUnauthorized() {
-        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService);
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService, expenseCategoryService);
         when(tokenService.rotate("forged.token.value"))
                 .thenThrow(BusinessException.unauthorized("유효하지 않은 refresh 토큰입니다."));
 
@@ -126,10 +133,32 @@ class AuthServiceTest {
 
     @Test
     void logout_whenCalled_delegatesToTokenService() {
-        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService);
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService, expenseCategoryService);
 
         authService.logout(new LogoutRequest("refresh.token"));
 
         verify(tokenService).revoke("refresh.token");
+    }
+
+    @Test
+    void signup_whenValid_savesUserAndCreatesDefaultExpenseCategories() {
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService, expenseCategoryService);
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        authService.signup(new SignupRequest("new@test.com", "Passw0rd!", "새회원"));
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(saved.capture());
+        verify(expenseCategoryService).addDefaults(saved.getValue());
+    }
+
+    @Test
+    void signup_whenEmailTaken_doesNotCreateCategories() {
+        AuthService authService = new AuthService(userRepository, passwordEncoder, tokenService, expenseCategoryService);
+        when(userRepository.existsByEmail("dup@test.com")).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.signup(new SignupRequest("dup@test.com", "Passw0rd!", "중복")))
+                .isInstanceOf(BusinessException.class);
+        verifyNoInteractions(expenseCategoryService);
     }
 }

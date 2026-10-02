@@ -1,7 +1,7 @@
 import { isTokenExpired, refreshSession } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errorMessage'
 import { getEvent, getEventsInRange, MAX_EVENTS_IN_RANGE, type EventDetail } from '@/api/events'
-import { getExpenseCategories, type ExpenseCategory } from '@/api/expenses'
+import { addDefaultExpenseCategories, getExpenseCategories, type ExpenseCategory } from '@/api/expenses'
 import {
   jobApplicationToCalendarEvent,
   toCalendarEvent,
@@ -449,6 +449,10 @@ export default function CalendarPage() {
           categoriesLoading={categories === null}
           categoriesError={categories?.error ?? null}
           header={entryTabs}
+          onAddDefaultCategories={async () => {
+            const { data } = await addDefaultExpenseCategories()
+            setCategories({ list: data.data, error: null })
+          }}
           onClose={closeModal}
           onSaved={onOverlaySaved}
           onManageCategories={() => navigate('/expenses')}

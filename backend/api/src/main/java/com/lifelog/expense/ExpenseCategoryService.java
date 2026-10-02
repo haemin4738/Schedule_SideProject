@@ -15,7 +15,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -50,6 +52,42 @@ public class ExpenseCategoryService {
         return ExpenseCategoryResponse.from(saved);
     }
 
+    /** 기본 카테고리 중 아직 없는 것만 추가하고 전체 목록을 돌려준다 ("기본 카테고리 추가" 버튼). 여러 번 눌러도 중복되지 않는다 */
+    @Transactional
+    public List<ExpenseCategoryResponse> addDefaults(Long userId) {
+        int added = addDefaults(getUser(userId));
+        log.info("Default expense categories added: userId={}, count={}", userId, added);
+        return list(userId, null);
+    }
+
+    /**
+     * 기본 카테고리 중 아직 없는 것만 추가한다 (회원가입 시 호출 — 가입과 같은 트랜잭션).
+     * 사용자당 상한({@value #MAX_CATEGORIES_PER_USER})을 넘는 만큼은 건너뛴다.
+     *
+     * @return 추가한 개수
+     */
+    @Transactional
+    public int addDefaults(User user) {
+        Long userId = user.getId();
+        List<ExpenseCategory> existing = expenseCategoryRepository.findAllByUserIdAndType(userId, null);
+        Set<String> taken = new HashSet<>();
+        for (ExpenseCategory category : existing) {
+            taken.add(key(category.getType(), category.getName()));
+        }
+        int room = MAX_CATEGORIES_PER_USER - existing.size();
+        int added = 0;
+        for (DefaultExpenseCategories.Entry entry : DefaultExpenseCategories.ALL) {
+            if (added >= room) {
+                break;
+            }
+            if (taken.add(key(entry.type(), entry.name()))) {
+                expenseCategoryRepository.save(ExpenseCategory.create(user, entry.type(), entry.name()));
+                added++;
+            }
+        }
+        return added;
+    }
+
     @Transactional
     public ExpenseCategoryResponse update(Long userId, Long id, ExpenseCategoryUpdateRequest request) {
         ExpenseCategory category = getOwnedCategory(id, userId);
@@ -71,6 +109,11 @@ public class ExpenseCategoryService {
         }
         expenseCategoryRepository.delete(category);
         log.info("Expense category deleted: id={}, userId={}", id, userId);
+    }
+
+    // DB collation(utf8mb4_unicode_ci)처럼 대소문자를 구분하지 않고 비교한다 — 남는 차이는 유니크 제약이 막는다
+    private static String key(ExpenseType type, String name) {
+        return type + ":" + name.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
     private User getUser(Long userId) {

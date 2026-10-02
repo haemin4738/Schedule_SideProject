@@ -72,10 +72,14 @@ class NaverAppLoginIntegrationTest {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement accounts = connection.prepareStatement(
                      "DELETE sa FROM social_accounts sa JOIN users u ON sa.user_id = u.id WHERE u.email = ?");
+             PreparedStatement categories = connection.prepareStatement(
+                     "DELETE c FROM expense_categories c JOIN users u ON c.user_id = u.id WHERE u.email = ?");
              PreparedStatement users = connection.prepareStatement("DELETE FROM users WHERE email = ?")) {
             for (String email : createdEmails) {
                 accounts.setString(1, email);
                 accounts.executeUpdate();
+                categories.setString(1, email);
+                categories.executeUpdate();
                 users.setString(1, email);
                 users.executeUpdate();
             }
