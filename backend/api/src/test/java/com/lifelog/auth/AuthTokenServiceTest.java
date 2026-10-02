@@ -38,6 +38,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -105,7 +106,7 @@ class AuthTokenServiceTest {
 
         ArgumentCaptor<RefreshSession> session = ArgumentCaptor.forClass(RefreshSession.class);
         ArgumentCaptor<Duration> ttl = ArgumentCaptor.forClass(Duration.class);
-        verify(store).create(session.capture(), ttl.capture());
+        verify(store).create(session.capture(), ttl.capture(), eq(AuthTokenService.MAX_SESSIONS_PER_USER));
 
         RefreshTokenClaims claims = parse(tokens.refreshToken());
         assertThat(session.getValue().userId()).isEqualTo(USER_ID);
@@ -120,7 +121,7 @@ class AuthTokenServiceTest {
         TokenResponse tokens = service.issue(USER_ID);
 
         ArgumentCaptor<Duration> ttl = ArgumentCaptor.forClass(Duration.class);
-        verify(store).create(any(), ttl.capture());
+        verify(store).create(any(), ttl.capture(), anyInt());
 
         RefreshTokenClaims claims = parse(tokens.refreshToken());
         assertThat(claims.expiresAt()).isEqualTo(NOW.plus(IDLE));
@@ -148,7 +149,7 @@ class AuthTokenServiceTest {
     void issue_whenStoreUnavailable_propagatesException() {
         AuthSessionUnavailableException failure =
                 new AuthSessionUnavailableException("down", new QueryTimeoutException("timeout"));
-        doThrow(failure).when(store).create(any(), any());
+        doThrow(failure).when(store).create(any(), any(), anyInt());
 
         assertThatThrownBy(() -> service.issue(USER_ID)).isSameAs(failure);
     }

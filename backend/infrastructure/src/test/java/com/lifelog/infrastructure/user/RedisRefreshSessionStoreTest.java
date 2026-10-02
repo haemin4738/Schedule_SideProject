@@ -44,6 +44,7 @@ class RedisRefreshSessionStoreTest {
     private static final Duration TTL = Duration.ofMinutes(10);
     private static final Duration OVERLAP = Duration.ofSeconds(30);
     private static final Instant AUTH_TIME = Instant.parse("2026-09-30T00:00:00Z");
+    private static final int MAX_SESSIONS = 10;
 
     private static LettuceConnectionFactory connectionFactory;
     private static StringRedisTemplate redis;
@@ -93,7 +94,7 @@ class RedisRefreshSessionStoreTest {
 
     private RefreshSession createSession(Long userId, String sessionId, String jti, Duration ttl) {
         RefreshSession session = new RefreshSession(userId, sessionId, jti, AUTH_TIME);
-        store.create(session, ttl);
+        store.create(session, ttl, MAX_SESSIONS);
         return session;
     }
 
@@ -162,19 +163,85 @@ class RedisRefreshSessionStoreTest {
     void create_whenInvalidArguments_throwsIllegalArgument() {
         RefreshSession valid = new RefreshSession(1L, "sid", "jti", AUTH_TIME);
 
-        assertThatThrownBy(() -> store.create(null, TTL)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> store.create(new RefreshSession(null, "sid", "jti", AUTH_TIME), TTL))
+        assertThatThrownBy(() -> store.create(null, TTL, MAX_SESSIONS)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> store.create(new RefreshSession(null, "sid", "jti", AUTH_TIME), TTL, MAX_SESSIONS))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> store.create(new RefreshSession(1L, " ", "jti", AUTH_TIME), TTL))
+        assertThatThrownBy(() -> store.create(new RefreshSession(1L, " ", "jti", AUTH_TIME), TTL, MAX_SESSIONS))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> store.create(new RefreshSession(1L, "sid", "", AUTH_TIME), TTL))
+        assertThatThrownBy(() -> store.create(new RefreshSession(1L, "sid", "", AUTH_TIME), TTL, MAX_SESSIONS))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> store.create(new RefreshSession(1L, "sid", "jti", null), TTL))
+        assertThatThrownBy(() -> store.create(new RefreshSession(1L, "sid", "jti", null), TTL, MAX_SESSIONS))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> store.create(valid, null)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> store.create(valid, Duration.ZERO)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> store.create(valid, Duration.ofSeconds(-1))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> store.create(valid, null, MAX_SESSIONS)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> store.create(valid, Duration.ZERO, MAX_SESSIONS)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> store.create(valid, Duration.ofSeconds(-1), MAX_SESSIONS)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> store.create(valid, TTL, 0)).isInstanceOf(IllegalArgumentException.class);
         assertThat(redis.hasKey(RedisRefreshSessionStore.sessionKey(1L, "sid"))).isFalse();
+    }
+
+    // ---------- create: 세션 상한 ----------
+
+    private int createAt(Long userId, String sid, Instant authTime, int maxSessions) {
+        return store.create(new RefreshSession(userId, sid, "jti-" + sid, authTime), TTL, maxSessions);
+    }
+
+    @Test
+    void create_whenWithinMaxSessions_evictsNothing() {
+        Long userId = newUserId();
+        String first = newId();
+        String second = newId();
+
+        assertThat(createAt(userId, first, AUTH_TIME, 2)).isZero();
+        assertThat(createAt(userId, second, AUTH_TIME.plusSeconds(1), 2)).isZero();
+
+        assertThat(redis.opsForSet().members(RedisRefreshSessionStore.indexKey(userId)))
+                .containsExactlyInAnyOrder(first, second);
+    }
+
+    @Test
+    void create_whenOverMaxSessions_evictsLeastRecentlyUsedWithoutTombstone() {
+        Long userId = newUserId();
+        String oldButActive = newId();
+        String idle = newId();
+        createAt(userId, oldButActive, AUTH_TIME, 2);
+        createAt(userId, idle, AUTH_TIME.plusSeconds(60), 2);
+        // 먼저 로그인했어도 최근에 회전한 세션은 남는다
+        assertThat(rotate(userId, oldButActive, "jti-" + oldButActive, "jti-rotated", AUTH_TIME.plusSeconds(120)))
+                .isEqualTo(RefreshRotationResult.ROTATED);
+
+        String newest = newId();
+        int evicted = createAt(userId, newest, AUTH_TIME.plusSeconds(180), 2);
+
+        assertThat(evicted).isEqualTo(1);
+        assertThat(redis.opsForSet().members(RedisRefreshSessionStore.indexKey(userId)))
+                .containsExactlyInAnyOrder(oldButActive, newest);
+        assertThat(redis.hasKey(RedisRefreshSessionStore.sessionKey(userId, idle))).isFalse();
+        assertThat(redis.hasKey(RedisRefreshSessionStore.tombstoneKey(userId, idle))).isFalse();
+        // 끝난 세션의 refresh 는 재사용 탐지가 아니라 NOT_FOUND — 다른 세션은 영향 없음
+        assertThat(rotate(userId, idle, "jti-" + idle, newId(), AUTH_TIME.plusSeconds(200)))
+                .isEqualTo(RefreshRotationResult.NOT_FOUND);
+        assertThat(rotate(userId, oldButActive, "jti-rotated", newId(), AUTH_TIME.plusSeconds(200)))
+                .isEqualTo(RefreshRotationResult.ROTATED);
+    }
+
+    @Test
+    void create_whenOverMaxByMany_evictsOldestUntilWithinMaxAndKeepsNewSession() {
+        Long userId = newUserId();
+        List<String> sids = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            String sid = newId();
+            sids.add(sid);
+            createAt(userId, sid, AUTH_TIME.plusSeconds(i), 10);
+        }
+
+        String newest = newId();
+        // 상한이 줄어든 경우(설정 변경)에도 새 세션은 남기고 오래된 순으로 정리한다
+        int evicted = createAt(userId, newest, AUTH_TIME.minusSeconds(60), 2);
+
+        assertThat(evicted).isEqualTo(3);
+        assertThat(redis.opsForSet().members(RedisRefreshSessionStore.indexKey(userId)))
+                .containsExactlyInAnyOrder(sids.get(3), newest);
+        assertThat(pttl(RedisRefreshSessionStore.indexKey(userId))).isGreaterThan(0);
     }
 
     // ---------- rotate ----------
@@ -677,7 +744,7 @@ class RedisRefreshSessionStoreTest {
         try {
             RedisRefreshSessionStore brokenStore = new RedisRefreshSessionStore(new StringRedisTemplate(down));
 
-            assertThatThrownBy(() -> brokenStore.create(new RefreshSession(1L, "sid", "jti", AUTH_TIME), TTL))
+            assertThatThrownBy(() -> brokenStore.create(new RefreshSession(1L, "sid", "jti", AUTH_TIME), TTL, MAX_SESSIONS))
                     .isInstanceOf(AuthSessionUnavailableException.class)
                     .hasCauseInstanceOf(org.springframework.dao.DataAccessException.class);
             assertThatThrownBy(() -> brokenStore.rotate(1L, "sid", "a", "b", TTL, Instant.now(), OVERLAP))
