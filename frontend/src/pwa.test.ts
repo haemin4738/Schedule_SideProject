@@ -25,7 +25,8 @@ describe('PWA', () => {
     expect(indexHtml).toContain('<link rel="manifest" href="/manifest.webmanifest" />')
     expect(indexHtml).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png" />')
     expect(indexHtml).toContain('name="apple-mobile-web-app-capable" content="yes"')
-    expect(indexHtml).toContain('viewport-fit=cover')
+    // viewport-fit=cover 를 쓰면 h-screen 페이지가 홈 인디케이터만큼 넘친다 — safe-area 처리를 함께 넣을 때만 바꿀 것
+    expect(indexHtml).toContain('<meta name="viewport" content="width=device-width, initial-scale=1.0" />')
     expect(publicFiles.has('/apple-touch-icon.png')).toBe(true)
   })
 

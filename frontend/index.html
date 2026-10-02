@@ -3,8 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
-    <!-- viewport-fit=cover: 홈 화면 앱(standalone)에서 노치·홈 인디케이터 영역까지 그리고, 여백은 safe-area-inset 으로 준다 -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- viewport-fit=cover 는 쓰지 않는다: 기본값이면 iOS 가 노치·홈 인디케이터를 피해 화면을 배치하므로
+         h-screen 페이지·고정 모달에 safe-area 여백을 따로 줄 필요가 없다 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- OAuth 콜백 URL 의 code/state 가 교차 출처 Referer 로 새지 않도록 origin 만 보낸다 (RFC 9700 4.2.4) -->
     <meta name="referrer" content="strict-origin" />
     <!-- 홈 화면에 추가(PWA) — iOS Safari 는 manifest 아이콘 대신 apple-touch-icon 을 쓴다 -->

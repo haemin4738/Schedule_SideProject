@@ -1,14 +1,9 @@
 @import "tailwindcss";
 @import "react-big-calendar/lib/css/react-big-calendar.css";
 
-/* 홈 화면 앱(standalone, viewport-fit=cover)에서 노치·홈 인디케이터 영역을 피한다. 일반 브라우저에서는 0 */
-body {
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-}
-
-/* iOS Safari 는 16px 미만 입력칸에 포커스하면 화면을 확대한다 — 터치 기기에서만 16px 로.
+/* iOS Safari 는 16px 미만 입력칸에 포커스하면 화면을 확대한다 — 터치 가능한 기기(트랙패드를 붙인 iPad 포함)에서만 16px 로.
    레이어 밖 규칙이라 Tailwind 유틸리티(text-sm 등, @layer utilities)보다 우선한다 */
-@media (pointer: coarse) {
+@media (any-pointer: coarse) {
   input,
   select,
   textarea {
