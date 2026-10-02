@@ -57,10 +57,12 @@ oauth:
   naver:
     client-id: ${NAVER_CLIENT_ID:}
     client-secret: ${NAVER_CLIENT_SECRET:}
-    app-callback-target: lifelog://oauth/naver
-    allowed-redirect-uris:
+    # 앱 로그인: 네이버 redirect_uri(서버 app-callback 절대 URL — 폰에서 닿는 주소여야 함, 네이버 콘솔에 등록).
+    #   code 가 이 주소로 전달되므로 운영(Phase 6)에서는 반드시 https. LAN http 는 로컬 실기기 검증용으로만
+    app-redirect-uri: ${NAVER_APP_REDIRECT_URI:http://localhost:8080/api/v1/auth/social/naver/app-callback}
+    app-callback-target: lifelog://oauth/naver   # app-callback 이 ?ticket= / ?error= 를 붙여 302 하는 앱 고정 대상
+    allowed-redirect-uris:                       # 웹 로그인(/social/naver/login) 전용
       - http://localhost:5173/oauth/callback/naver
-      - http://localhost:8080/api/v1/auth/social/naver/app-callback
   google:
     client-id: ${GOOGLE_WEB_CLIENT_ID:}
     client-secret: ${GOOGLE_WEB_CLIENT_SECRET:}

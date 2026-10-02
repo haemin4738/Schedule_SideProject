@@ -5,6 +5,7 @@ import com.lifelog.auth.dto.SocialLoginRequest;
 import com.lifelog.auth.dto.SocialLoginResponse;
 import com.lifelog.auth.dto.TokenResponse;
 import com.lifelog.common.exception.BusinessException;
+import com.lifelog.common.exception.ErrorCode;
 import com.lifelog.domain.user.SignupProvider;
 import com.lifelog.domain.user.User;
 import com.lifelog.domain.user.UserRepository;
@@ -58,6 +59,15 @@ public class SocialAuthService {
 
         // 1. 제공자 검증 — 트랜잭션 밖
         SocialUserInfo info = verifier.verify(provider, credential);
+        return resolve(info);
+    }
+
+    /**
+     * 제공자 검증을 마친 사용자 정보로 로그인·가입·연결 필요 여부를 판정한다 (설계 4.1 2~4단계).
+     * 웹 로그인과 앱 로그인(서버가 code 를 교환한 네이버)이 공유한다.
+     */
+    public SocialLoginResponse resolve(SocialUserInfo info) {
+        SocialProvider provider = info.provider();
 
         // 2. 이미 연결된 소셜 계정
         Optional<SocialAccount> linked =
@@ -111,39 +121,43 @@ public class SocialAuthService {
     public TokenResponse link(SocialLinkRequest request) {
         String linkToken = request.linkToken();
         PendingSocialLink pending = pendingSocialLinkStore.find(linkToken)
-                .orElseThrow(() -> BusinessException.unauthorized(LINK_EXPIRED_MESSAGE));
+                .orElseThrow(SocialAuthService::linkExpired);
 
         User user = userRepository.findById(pending.userId()).orElse(null);
         if (user == null || !user.hasPassword()) {
             pendingSocialLinkStore.consume(linkToken);
-            throw BusinessException.unauthorized(LINK_EXPIRED_MESSAGE);
+            throw linkExpired();
         }
 
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
             int attempts = pendingSocialLinkStore.incrementAttempts(linkToken);
             if (attempts == 0) {
                 // 그 사이 만료/사용됨
-                throw BusinessException.unauthorized(LINK_EXPIRED_MESSAGE);
+                throw linkExpired();
             }
             if (attempts >= MAX_LINK_ATTEMPTS) {
                 pendingSocialLinkStore.consume(linkToken);
                 log.warn("소셜 계정 연결 폐기: userId={}, provider={}, 비밀번호 시도 횟수 초과", user.getId(), pending.provider());
-                throw BusinessException.unauthorized(LINK_TOO_MANY_ATTEMPTS_MESSAGE);
+                throw BusinessException.unauthorized(LINK_TOO_MANY_ATTEMPTS_MESSAGE, ErrorCode.SOCIAL_LINK_ATTEMPTS_EXCEEDED);
             }
             log.warn("소셜 계정 연결 비밀번호 불일치: userId={}, provider={}, attempts={}",
                     user.getId(), pending.provider(), attempts);
-            throw BusinessException.unauthorized(LINK_WRONG_PASSWORD_MESSAGE);
+            throw BusinessException.unauthorized(LINK_WRONG_PASSWORD_MESSAGE, ErrorCode.SOCIAL_LINK_WRONG_PASSWORD);
         }
 
         // 1회용 보장 — 동시 요청 중 하나만 통과
         if (!pendingSocialLinkStore.consume(linkToken)) {
-            throw BusinessException.unauthorized(LINK_EXPIRED_MESSAGE);
+            throw linkExpired();
         }
 
         User linkedUser = registrar.link(pending);
         log.info("소셜 계정 연결: userId={}, provider={}, status={}",
                 linkedUser.getId(), pending.provider(), SocialLoginResponse.Status.LOGGED_IN);
         return issueTokens(linkedUser.getId());
+    }
+
+    private static BusinessException linkExpired() {
+        return BusinessException.unauthorized(LINK_EXPIRED_MESSAGE, ErrorCode.SOCIAL_LINK_EXPIRED);
     }
 
     static SocialProvider parseProvider(String providerName) {

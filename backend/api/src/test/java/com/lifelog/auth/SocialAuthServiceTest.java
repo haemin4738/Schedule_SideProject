@@ -6,6 +6,7 @@ import com.lifelog.auth.dto.SocialLoginRequest;
 import com.lifelog.auth.dto.SocialLoginResponse;
 import com.lifelog.auth.dto.TokenResponse;
 import com.lifelog.common.exception.BusinessException;
+import com.lifelog.common.exception.ErrorCode;
 import com.lifelog.domain.user.User;
 import com.lifelog.domain.user.UserRepository;
 import com.lifelog.domain.user.social.PendingSocialLink;
@@ -364,6 +365,7 @@ class SocialAuthServiceTest {
         assertThatThrownBy(() -> service.link(new SocialLinkRequest(LINK_TOKEN, "wrong")))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage(SocialAuthService.LINK_WRONG_PASSWORD_MESSAGE)
+                .hasFieldOrPropertyWithValue("code", ErrorCode.SOCIAL_LINK_WRONG_PASSWORD)
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.UNAUTHORIZED);
         verify(pendingSocialLinkStore, never()).consume(any());
         verifyNoInteractions(registrar, tokenService);
@@ -376,7 +378,8 @@ class SocialAuthServiceTest {
         when(pendingSocialLinkStore.incrementAttempts(LINK_TOKEN)).thenReturn(4);
 
         assertThatThrownBy(() -> service.link(new SocialLinkRequest(LINK_TOKEN, "wrong")))
-                .hasMessage(SocialAuthService.LINK_WRONG_PASSWORD_MESSAGE);
+                .hasMessage(SocialAuthService.LINK_WRONG_PASSWORD_MESSAGE)
+                .hasFieldOrPropertyWithValue("code", ErrorCode.SOCIAL_LINK_WRONG_PASSWORD);
         verify(pendingSocialLinkStore, never()).consume(any());
     }
 
@@ -390,6 +393,7 @@ class SocialAuthServiceTest {
         assertThatThrownBy(() -> service.link(new SocialLinkRequest(LINK_TOKEN, "wrong")))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage(SocialAuthService.LINK_TOO_MANY_ATTEMPTS_MESSAGE)
+                .hasFieldOrPropertyWithValue("code", ErrorCode.SOCIAL_LINK_ATTEMPTS_EXCEEDED)
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.UNAUTHORIZED);
         verify(pendingSocialLinkStore).consume(LINK_TOKEN);
         verifyNoInteractions(registrar, tokenService);
@@ -402,6 +406,7 @@ class SocialAuthServiceTest {
         assertThatThrownBy(() -> service.link(new SocialLinkRequest(LINK_TOKEN, "pw")))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage(SocialAuthService.LINK_EXPIRED_MESSAGE)
+                .hasFieldOrPropertyWithValue("code", ErrorCode.SOCIAL_LINK_EXPIRED)
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.UNAUTHORIZED);
         verifyNoInteractions(userRepository, passwordEncoder, registrar, tokenService);
     }
@@ -417,6 +422,7 @@ class SocialAuthServiceTest {
         assertThatThrownBy(() -> service.link(new SocialLinkRequest(LINK_TOKEN, "pw")))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage(SocialAuthService.LINK_EXPIRED_MESSAGE)
+                .hasFieldOrPropertyWithValue("code", ErrorCode.SOCIAL_LINK_EXPIRED)
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.UNAUTHORIZED);
         verifyNoInteractions(registrar, tokenService);
     }
@@ -430,6 +436,7 @@ class SocialAuthServiceTest {
         assertThatThrownBy(() -> service.link(new SocialLinkRequest(LINK_TOKEN, "wrong")))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage(SocialAuthService.LINK_EXPIRED_MESSAGE)
+                .hasFieldOrPropertyWithValue("code", ErrorCode.SOCIAL_LINK_EXPIRED)
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.UNAUTHORIZED);
         verify(pendingSocialLinkStore, never()).consume(any());
     }
@@ -443,6 +450,7 @@ class SocialAuthServiceTest {
         assertThatThrownBy(() -> service.link(new SocialLinkRequest(LINK_TOKEN, "pw")))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage(SocialAuthService.LINK_EXPIRED_MESSAGE)
+                .hasFieldOrPropertyWithValue("code", ErrorCode.SOCIAL_LINK_EXPIRED)
                 .extracting(SocialAuthServiceTest::statusOf).isEqualTo(HttpStatus.UNAUTHORIZED);
         verify(pendingSocialLinkStore).consume(LINK_TOKEN);
         verifyNoInteractions(passwordEncoder, registrar, tokenService);
@@ -454,7 +462,8 @@ class SocialAuthServiceTest {
         when(userRepository.findById(5L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.link(new SocialLinkRequest(LINK_TOKEN, "pw")))
-                .hasMessage(SocialAuthService.LINK_EXPIRED_MESSAGE);
+                .hasMessage(SocialAuthService.LINK_EXPIRED_MESSAGE)
+                .hasFieldOrPropertyWithValue("code", ErrorCode.SOCIAL_LINK_EXPIRED);
         verify(pendingSocialLinkStore).consume(LINK_TOKEN);
         verifyNoInteractions(passwordEncoder, registrar);
     }

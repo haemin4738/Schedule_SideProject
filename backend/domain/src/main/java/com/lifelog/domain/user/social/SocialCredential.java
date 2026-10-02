@@ -15,4 +15,11 @@ public sealed interface SocialCredential {
 
     /** Flutter 구글 SDK — JWKS 서명 + aud/iss/exp 검증 */
     record IdToken(String token, String nonce) implements SocialCredential {}
+
+    /**
+     * 서버 자신의 콜백(네이버 앱 로그인 app-callback)이 제공자에게서 직접 받은 code.
+     * redirect_uri 는 서버 설정값이므로 허용 목록 검사 대상이 아니다. 요청 DTO 로는 만들 수 없다 — 서버 코드만 생성한다.
+     * state 는 서버가 발급·1회 소비를 마친 값
+     */
+    record ServerCallbackCode(String code, String state) implements SocialCredential {}
 }

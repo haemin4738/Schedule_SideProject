@@ -36,22 +36,37 @@ public class NaverIdentityClient {
     }
 
     public SocialUserInfo verify(SocialCredential.AuthorizationCode credential) {
+        requireConfigured();
+        requireText(credential.code(), "code");
+        requireText(credential.state(), "state");
+        // redirect_uri 는 네이버 토큰 요청의 문서상 파라미터가 아니다(제공자 대조 여부는 미검증) — 대조된다고 가정하지 않고 자체 검사
+        requireAllowedRedirectUri(PROVIDER, credential.redirectUri(), properties.allowedRedirectUris());
+        return exchange(credential.code(), credential.state(), credential.codeVerifier());
+    }
+
+    /** 앱 로그인 — 서버 콜백이 직접 받은 code. redirect_uri 는 서버 설정값(app-redirect-uri)이라 허용 목록 검사가 없다 */
+    public SocialUserInfo verify(SocialCredential.ServerCallbackCode credential) {
+        requireConfigured();
+        requireText(credential.code(), "code");
+        requireText(credential.state(), "state");
+        return exchange(credential.code(), credential.state(), null);
+    }
+
+    private void requireConfigured() {
         if (!hasText(properties.clientId()) || !hasText(properties.clientSecret())) {
             throw notConfigured(PROVIDER);
         }
-        requireText(credential.code(), "code");
-        requireText(credential.state(), "state");
-        // 네이버 토큰 요청에는 redirect_uri 가 없어 제공자가 대조하지 않는다 — 입력 방어용 자체 검사
-        requireAllowedRedirectUri(PROVIDER, credential.redirectUri(), properties.allowedRedirectUris());
+    }
 
+    private SocialUserInfo exchange(String code, String state, String codeVerifier) {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("grant_type", "authorization_code");
         form.add("client_id", properties.clientId());
         form.add("client_secret", properties.clientSecret());
-        form.add("code", credential.code());
-        form.add("state", credential.state());
-        if (hasText(credential.codeVerifier())) {
-            form.add("code_verifier", credential.codeVerifier());
+        form.add("code", code);
+        form.add("state", state);
+        if (hasText(codeVerifier)) {
+            form.add("code_verifier", codeVerifier);
         }
 
         JsonNode token = call(PROVIDER, "token", () -> restClient.post()

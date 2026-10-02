@@ -17,7 +17,7 @@ public record OAuthProviderProperties(Http http, Kakao kakao, Naver naver, Googl
     public OAuthProviderProperties {
         http = http != null ? http : new Http(null, null);
         kakao = kakao != null ? kakao : new Kakao(null, null, null, null);
-        naver = naver != null ? naver : new Naver(null, null, null, null);
+        naver = naver != null ? naver : new Naver(null, null, null, null, null);
         google = google != null ? google : new Google(null, null, null, null);
     }
 
@@ -36,8 +36,13 @@ public record OAuthProviderProperties(Http http, Kakao kakao, Naver naver, Googl
         }
     }
 
-    /** appCallbackTarget = iOS 앱 바운스 고정 대상 (api 모듈의 app-callback 에서 사용) */
-    public record Naver(String clientId, String clientSecret, List<String> allowedRedirectUris, String appCallbackTarget) {
+    /**
+     * allowedRedirectUris = 웹 로그인(/social/naver/login) 전용.
+     * appRedirectUri = 앱 로그인의 네이버 redirect_uri(서버 app-callback 절대 URL),
+     * appCallbackTarget = app-callback 이 ticket 을 붙여 보내는 앱 고정 대상 (둘 다 api 모듈 앱 로그인에서 사용)
+     */
+    public record Naver(String clientId, String clientSecret, List<String> allowedRedirectUris,
+                        String appRedirectUri, String appCallbackTarget) {
         public Naver {
             allowedRedirectUris = nonBlank(allowedRedirectUris);
         }
