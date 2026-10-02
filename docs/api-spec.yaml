@@ -1368,6 +1368,8 @@ components:
           example: 'Passw0rd!'
         name:
           type: string
+          maxLength: 12
+          description: 공백만은 불가. 12자 초과 시 400.
           example: 홍길동
 
     LoginRequest:

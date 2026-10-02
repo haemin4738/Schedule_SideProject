@@ -196,6 +196,16 @@ describe('SignupPage', () => {
     renderSignup()
     expect(screen.getByRole('link', { name: '로그인' })).toHaveAttribute('href', '/login')
   })
+
+  it('onType_nameLongerThan12_isCutAt12', async () => {
+    const user = userEvent.setup()
+    renderSignup()
+
+    // 서버 SignupRequest.name 의 @Size(max = 12) 와 맞춘다
+    await user.type(screen.getByLabelText('이름'), '가나다라마바사아자차카타파하')
+
+    expect(screen.getByLabelText('이름')).toHaveValue('가나다라마바사아자차카타')
+  })
 })
 
 describe('PASSWORD_PATTERN', () => {
