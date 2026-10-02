@@ -59,6 +59,7 @@ public class NaverAppLoginService {
     private final SocialIdentityVerifier verifier;
     private final SocialAuthService socialAuthService;
     private final String clientId;
+    private final String clientSecret;
     private final String appRedirectUri;
     private final String callbackTarget;
 
@@ -66,18 +67,21 @@ public class NaverAppLoginService {
                                 SocialIdentityVerifier verifier,
                                 SocialAuthService socialAuthService,
                                 @Value("${oauth.naver.client-id:}") String clientId,
+                                @Value("${oauth.naver.client-secret:}") String clientSecret,
                                 @Value("${oauth.naver.app-redirect-uri:}") String appRedirectUri,
                                 @Value("${oauth.naver.app-callback-target}") String callbackTarget) {
         this.store = store;
         this.verifier = verifier;
         this.socialAuthService = socialAuthService;
         this.clientId = clientId;
+        this.clientSecret = clientSecret;
         this.appRedirectUri = appRedirectUri;
         this.callbackTarget = callbackTarget;
     }
 
     public NaverAppStartResponse start(String codeChallenge) {
-        if (isBlank(clientId) || isBlank(appRedirectUri)) {
+        // 설정이 빠졌으면 사용자가 네이버 로그인까지 마친 뒤 콜백에서 실패하지 않도록 시작 단계에서 막는다
+        if (isBlank(clientId) || isBlank(clientSecret) || isBlank(appRedirectUri)) {
             throw new SocialAuthException(SocialAuthException.Reason.SERVICE_UNAVAILABLE, "NAVER app login not configured");
         }
         String state = store.issueState(codeChallenge, STATE_TTL);
@@ -116,6 +120,10 @@ public class NaverAppLoginService {
             return redirect("ticket", ticket);
         } catch (SocialAuthException e) {
             log.warn("네이버 앱 로그인 콜백: result={}, reason={}", CallbackError.PROVIDER_ERROR, e.getReason());
+            return redirect("error", CallbackError.PROVIDER_ERROR.name());
+        } catch (RuntimeException e) {
+            // 브라우저(인증 세션)가 JSON 500 화면에 멈추지 않도록 리다이렉트 경로는 항상 302 로 끝낸다
+            log.error("네이버 앱 로그인 콜백 예기치 못한 오류: type={}", e.getClass().getSimpleName());
             return redirect("error", CallbackError.PROVIDER_ERROR.name());
         }
     }

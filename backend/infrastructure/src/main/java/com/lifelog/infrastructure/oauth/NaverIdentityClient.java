@@ -39,7 +39,7 @@ public class NaverIdentityClient {
         requireConfigured();
         requireText(credential.code(), "code");
         requireText(credential.state(), "state");
-        // 네이버 토큰 요청에는 redirect_uri 가 없어 제공자가 대조하지 않는다 — 입력 방어용 자체 검사
+        // redirect_uri 는 네이버 토큰 요청의 문서상 파라미터가 아니다(제공자 대조 여부는 미검증) — 대조된다고 가정하지 않고 자체 검사
         requireAllowedRedirectUri(PROVIDER, credential.redirectUri(), properties.allowedRedirectUris());
         return exchange(credential.code(), credential.state(), credential.codeVerifier());
     }

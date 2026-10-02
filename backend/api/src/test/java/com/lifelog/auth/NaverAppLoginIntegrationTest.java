@@ -44,7 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * 네이버 앱 로그인 전 구간(start → 네이버 콜백 → complete) — 실제 Redis·MySQL, 네이버 HTTP 호출만 대체.
  */
-@SpringBootTest(properties = "oauth.naver.client-id=test-naver-client")
+@SpringBootTest(properties = {"oauth.naver.client-id=test-naver-client", "oauth.naver.client-secret=test-naver-secret"})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class NaverAppLoginIntegrationTest {

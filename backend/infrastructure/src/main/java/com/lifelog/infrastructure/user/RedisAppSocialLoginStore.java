@@ -132,7 +132,8 @@ public class RedisAppSocialLoginStore implements AppSocialLoginStore {
         try {
             return operation.get();
         } catch (DataAccessException e) {
-            log.error("앱 소셜 로그인 저장소 오류: type={}", e.getClass().getSimpleName());
+            // 응답(503)과 로그는 호출 측(GlobalExceptionHandler·콜백)이 담당한다 — 여기서는 중복 ERROR 를 피해 WARN 만 남긴다
+            log.warn("앱 소셜 로그인 저장소 오류: type={}", e.getClass().getSimpleName());
             throw new SocialAuthException(Reason.SERVICE_UNAVAILABLE, "app social login store unavailable", e);
         }
     }

@@ -61,7 +61,7 @@ class NaverAppLoginServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new NaverAppLoginService(store, verifier, socialAuthService, "naver-id", APP_REDIRECT, TARGET);
+        service = new NaverAppLoginService(store, verifier, socialAuthService, "naver-id", "naver-secret", APP_REDIRECT, TARGET);
     }
 
     private static UriComponents parse(URI uri) {
@@ -100,11 +100,15 @@ class NaverAppLoginServiceTest {
     @ParameterizedTest
     @NullAndEmptySource
     @ValueSource(strings = " ")
-    void start_whenClientIdOrRedirectNotConfigured_throwsServiceUnavailable(String blank) {
-        NaverAppLoginService noClient = new NaverAppLoginService(store, verifier, socialAuthService, blank, APP_REDIRECT, TARGET);
-        NaverAppLoginService noRedirect = new NaverAppLoginService(store, verifier, socialAuthService, "naver-id", blank, TARGET);
+    void start_whenClientIdSecretOrRedirectNotConfigured_throwsServiceUnavailable(String blank) {
+        NaverAppLoginService noClient =
+                new NaverAppLoginService(store, verifier, socialAuthService, blank, "naver-secret", APP_REDIRECT, TARGET);
+        NaverAppLoginService noSecret =
+                new NaverAppLoginService(store, verifier, socialAuthService, "naver-id", blank, APP_REDIRECT, TARGET);
+        NaverAppLoginService noRedirect =
+                new NaverAppLoginService(store, verifier, socialAuthService, "naver-id", "naver-secret", blank, TARGET);
 
-        for (NaverAppLoginService unconfigured : new NaverAppLoginService[]{noClient, noRedirect}) {
+        for (NaverAppLoginService unconfigured : new NaverAppLoginService[]{noClient, noSecret, noRedirect}) {
             assertThatThrownBy(() -> unconfigured.start(CHALLENGE))
                     .isInstanceOf(SocialAuthException.class)
                     .extracting(e -> ((SocialAuthException) e).getReason()).isEqualTo(Reason.SERVICE_UNAVAILABLE);
@@ -181,6 +185,15 @@ class NaverAppLoginServiceTest {
 
         assertRedirect(service.callback("code-1", "state-1", null), "error", "PROVIDER_ERROR");
         verify(store, never()).issueTicket(any(), any());
+    }
+
+    @Test
+    void callback_whenUnexpectedException_stillRedirectsProviderError() {
+        when(store.consumeState("state-1")).thenReturn(Optional.of(CHALLENGE));
+        when(verifier.verify(any(), any())).thenReturn(INFO);
+        when(store.issueTicket(any(), any())).thenThrow(new IllegalStateException("boom"));
+
+        assertRedirect(service.callback("code-1", "state-1", null), "error", "PROVIDER_ERROR");
     }
 
     @Test
