@@ -16,4 +16,7 @@ dependencies {
 
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
+    // 런타임엔 infrastructure 경유로 이미 있음 — Redis 연결 설정 검증 테스트에서 타입을 쓰기 위해 컴파일 경로에만 추가 (버전은 Boot BOM)
+    testImplementation 'org.springframework.data:spring-data-redis'
+    testImplementation 'io.lettuce:lettuce-core'
 }
