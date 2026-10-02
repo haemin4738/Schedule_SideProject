@@ -72,6 +72,21 @@ class SocialIdentityVerifierImplTest {
     }
 
     @Test
+    void verify_whenNaverServerCallbackCode_routesToNaver() {
+        SocialCredential.ServerCallbackCode callback = new SocialCredential.ServerCallbackCode("c", "s");
+        when(naver.verify(callback)).thenReturn(info(SocialProvider.NAVER));
+        assertThat(verifier.verify(SocialProvider.NAVER, callback)).isEqualTo(info(SocialProvider.NAVER));
+    }
+
+    @Test
+    void verify_whenServerCallbackCodeForKakaoOrGoogle_throwsInvalidRequest() {
+        SocialCredential.ServerCallbackCode callback = new SocialCredential.ServerCallbackCode("c", "s");
+        assertInvalidRequest(() -> verifier.verify(SocialProvider.KAKAO, callback));
+        assertInvalidRequest(() -> verifier.verify(SocialProvider.GOOGLE, callback));
+        verifyNoInteractions(kakao, naver, google);
+    }
+
+    @Test
     void verify_whenGoogleCode_routesToGoogle() {
         when(google.verify(CODE)).thenReturn(info(SocialProvider.GOOGLE));
         assertThat(verifier.verify(SocialProvider.GOOGLE, CODE)).isEqualTo(info(SocialProvider.GOOGLE));
@@ -129,7 +144,7 @@ class SocialIdentityVerifierImplTest {
     void verify_withRealClients_whenRedirectUriOutsideAllowList_throwsInvalidRequest() {
         OAuthProviderProperties props = new OAuthProviderProperties(null,
                 new OAuthProviderProperties.Kakao("k", "s", "1", List.of("http://allowed/kakao")),
-                new OAuthProviderProperties.Naver("n", "s", List.of("http://allowed/naver"), null),
+                new OAuthProviderProperties.Naver("n", "s", List.of("http://allowed/naver"), null, null),
                 new OAuthProviderProperties.Google("g", "s", List.of("g"), List.of("http://allowed/google")));
         SocialIdentityVerifierImpl real = realVerifier(props);
         AuthorizationCode outside = new AuthorizationCode("c", "http://evil/cb", null, null, "s");

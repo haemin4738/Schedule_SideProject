@@ -43,7 +43,7 @@ class NaverIdentityClientTest {
     @BeforeEach
     void setUp() {
         client = newClient(new OAuthProviderProperties.Naver("naver-id", "naver-secret",
-                List.of(WEB_REDIRECT, APP_REDIRECT), "lifelog://oauth/naver"));
+                List.of(WEB_REDIRECT), APP_REDIRECT, "lifelog://oauth/naver"));
     }
 
     private NaverIdentityClient newClient(OAuthProviderProperties.Naver naver) {
@@ -100,11 +100,53 @@ class NaverIdentityClientTest {
     }
 
     @Test
-    void verify_whenAppCallbackRedirectUri_isAllowed() {
-        expectToken("{\"access_token\":\"naver-at\"}");
-        expectProfile("{\"resultcode\":\"00\",\"response\":{\"id\":\"u\",\"email\":\"n@naver.com\"}}");
+    void verify_whenWebLoginUsesAppCallbackRedirectUri_throwsInvalidRequest() {
+        // 앱 콜백 code 는 서버만 교환한다 — 웹 로그인 경로로는 받지 않는다
+        assertReason(() -> client.verify(code(APP_REDIRECT)), Reason.INVALID_REQUEST);
+        server.verify();
+    }
 
-        assertThat(client.verify(code(APP_REDIRECT)).providerUserId()).isEqualTo("u");
+    @Test
+    void verifyServerCallback_whenSuccess_exchangesCodeWithoutRedirectCheckOrVerifier() {
+        server.expect(requestTo(NaverIdentityClient.TOKEN_URI))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().formDataContains(Map.of(
+                        "grant_type", "authorization_code",
+                        "client_id", "naver-id",
+                        "client_secret", "naver-secret",
+                        "code", "app-code",
+                        "state", "app-state")))
+                .andExpect(request -> assertThat(request.getBody().toString()).doesNotContain("code_verifier"))
+                .andRespond(withSuccess("{\"access_token\":\"naver-at\"}", MediaType.APPLICATION_JSON));
+        expectProfile("{\"resultcode\":\"00\",\"response\":{\"id\":\"u\",\"email\":\"n@naver.com\",\"name\":\"이름\"}}");
+
+        SocialUserInfo info = client.verify(new SocialCredential.ServerCallbackCode("app-code", "app-state"));
+
+        assertThat(info).isEqualTo(new SocialUserInfo(SocialProvider.NAVER, "u", "n@naver.com", true, "이름"));
+        server.verify();
+    }
+
+    @Test
+    void verifyServerCallback_whenCodeOrStateMissing_throwsWithoutCallingProvider() {
+        assertThatThrownBy(() -> client.verify(new SocialCredential.ServerCallbackCode(" ", "s")))
+                .isInstanceOf(SocialAuthException.class);
+        assertThatThrownBy(() -> client.verify(new SocialCredential.ServerCallbackCode("c", null)))
+                .isInstanceOf(SocialAuthException.class);
+        server.verify();
+    }
+
+    @Test
+    void verifyServerCallback_whenNotConfigured_throwsServiceUnavailable() {
+        NaverIdentityClient unconfigured = newClient(new OAuthProviderProperties.Naver(null, null, List.of(WEB_REDIRECT), APP_REDIRECT, null));
+
+        assertReason(() -> unconfigured.verify(new SocialCredential.ServerCallbackCode("c", "s")), Reason.SERVICE_UNAVAILABLE);
+    }
+
+    @Test
+    void verifyServerCallback_whenTokenRejected_throwsInvalidCredential() {
+        expectToken("{\"error\":\"invalid_request\",\"error_description\":\"no\"}");
+
+        assertReason(() -> client.verify(new SocialCredential.ServerCallbackCode("c", "s")), Reason.INVALID_CREDENTIAL);
     }
 
     @Test
@@ -213,7 +255,7 @@ class NaverIdentityClientTest {
 
     @Test
     void verify_whenNotConfigured_throwsServiceUnavailable() {
-        NaverIdentityClient unconfigured = newClient(new OAuthProviderProperties.Naver(null, null, List.of(WEB_REDIRECT), null));
+        NaverIdentityClient unconfigured = newClient(new OAuthProviderProperties.Naver(null, null, List.of(WEB_REDIRECT), null, null));
 
         assertReason(() -> unconfigured.verify(code(WEB_REDIRECT)), Reason.SERVICE_UNAVAILABLE);
     }

@@ -5,6 +5,7 @@ import com.lifelog.domain.user.social.SocialCredential;
 import com.lifelog.domain.user.social.SocialCredential.AccessToken;
 import com.lifelog.domain.user.social.SocialCredential.AuthorizationCode;
 import com.lifelog.domain.user.social.SocialCredential.IdToken;
+import com.lifelog.domain.user.social.SocialCredential.ServerCallbackCode;
 import com.lifelog.domain.user.social.SocialIdentityVerifier;
 import com.lifelog.domain.user.social.SocialProvider;
 import com.lifelog.domain.user.social.SocialUserInfo;
@@ -14,7 +15,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 제공자 × 자격증명 유형 라우팅 (설계 2.2).
- * KAKAO = code | access token, NAVER = code, GOOGLE = code | id_token. 그 외 조합은 INVALID_REQUEST.
+ * KAKAO = code | access token, NAVER = code | 서버 콜백 code, GOOGLE = code | id_token. 그 외 조합은 INVALID_REQUEST.
  */
 @Slf4j
 @Component
@@ -50,9 +51,11 @@ public class SocialIdentityVerifierImpl implements SocialIdentityVerifier {
                 case AuthorizationCode code -> kakao.verify(code);
                 case AccessToken token -> kakao.verify(token);
                 case IdToken ignored -> throw unsupported(provider, credential);
+                case ServerCallbackCode ignored -> throw unsupported(provider, credential);
             };
             case NAVER -> switch (credential) {
                 case AuthorizationCode code -> naver.verify(code);
+                case ServerCallbackCode code -> naver.verify(code);
                 case AccessToken ignored -> throw unsupported(provider, credential);
                 case IdToken ignored -> throw unsupported(provider, credential);
             };
@@ -60,6 +63,7 @@ public class SocialIdentityVerifierImpl implements SocialIdentityVerifier {
                 case AuthorizationCode code -> google.verify(code);
                 case IdToken token -> google.verify(token);
                 case AccessToken ignored -> throw unsupported(provider, credential);
+                case ServerCallbackCode ignored -> throw unsupported(provider, credential);
             };
         };
     }

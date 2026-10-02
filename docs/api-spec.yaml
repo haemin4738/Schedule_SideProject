@@ -279,7 +279,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse_Error'
         '401':
-          description: linkToken 만료/사용됨, 비밀번호 불일치, 시도 횟수 초과
+          description: |
+            code 로 분기한다.
+            - `SOCIAL_LINK_WRONG_PASSWORD`: 비밀번호 불일치 — 같은 화면에서 다시 입력
+            - `SOCIAL_LINK_ATTEMPTS_EXCEEDED`: 5회 초과로 linkToken 폐기 — 소셜 로그인부터 다시
+            - `SOCIAL_LINK_EXPIRED`: linkToken 만료·이미 사용됨 — 소셜 로그인부터 다시
           content:
             application/json:
               schema:
@@ -297,16 +301,60 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponse_Error'
 
+  /auth/social/naver/app/start:
+    post:
+      tags: [auth]
+      summary: 네이버 앱(iOS) 로그인 시작
+      description: |
+        앱이 32바이트 이상 난수 codeVerifier 를 만들어 메모리에만 두고, `BASE64URL(SHA-256(codeVerifier))`(패딩 없음 43자)를 보낸다.
+        서버는 그 값에 묶인 1회용 state(유효 10분)를 발급하고 네이버 authorize URL 을 돌려준다.
+        앱은 이 URL 을 ASWebAuthenticationSession(flutter_web_auth_2, callbackUrlScheme `lifelog`)으로 그대로 연다.
+        네이버 code 는 서버 콜백에서 교환되며 앱으로 전달되지 않는다.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NaverAppStartRequest'
+      responses:
+        '200':
+          description: authorize URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  data: { $ref: '#/components/schemas/NaverAppStartResponse' }
+                  error: { type: string, nullable: true, example: null }
+        '400':
+          description: codeChallenge 누락·형식 오류
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '503':
+          description: 네이버 앱 로그인 설정 누락 또는 저장소(Redis) 장애
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+
   /auth/social/naver/app-callback:
     get:
       tags: [auth]
-      summary: 네이버 로그인 iOS 앱 콜백 (리다이렉트 전용)
+      summary: 네이버 앱(iOS) 로그인 콜백 (리다이렉트 전용)
       description: |
-        iOS 앱의 네이버 로그인 redirect_uri. 쿼리의 code, state, error 만 URL 인코딩해
-        서버 설정(`oauth.naver.app-callback-target`, 예 `lifelog://oauth/naver`)으로 고정된 대상에 302 리다이렉트한다.
+        네이버 redirect_uri(`oauth.naver.app-redirect-uri`, 환경변수 `NAVER_APP_REDIRECT_URI`).
+        state 를 1회 소비하고 서버가 code 를 직접 교환한 뒤, 결과를 1회용 ticket(유효 2분)으로 만들어
+        고정 대상(`oauth.naver.app-callback-target`, 예 `lifelog://oauth/naver`)에 `?ticket=` 으로 302 한다.
+        실패 시 `?error=` 고정 코드만 붙인다(제공자 원문은 전달하지 않음):
+        - `ACCESS_DENIED`: 사용자 취소·네이버 error
+        - `INVALID_STATE`: state 없음·만료·이미 사용됨
+        - `PROVIDER_ERROR`: code 교환·프로필 조회 실패, 저장소 장애
         요청 값으로 리다이렉트 대상이 바뀌지 않는다. 응답 envelope 을 쓰지 않으며
         `Cache-Control: no-store`, `Referrer-Policy: no-referrer` 헤더를 붙인다.
-        앱은 받은 code 로 `/auth/social/naver/login` (AUTHORIZATION_CODE) 을 호출한다.
       security: []
       parameters:
         - { name: code, in: query, required: false, schema: { type: string } }
@@ -314,14 +362,62 @@ paths:
         - { name: error, in: query, required: false, schema: { type: string } }
       responses:
         '302':
-          description: 앱 딥링크로 리다이렉트
+          description: 앱 고정 대상으로 리다이렉트
           headers:
             Location:
-              schema: { type: string, example: 'lifelog://oauth/naver?code=abc&state=xyz' }
+              schema: { type: string, example: 'lifelog://oauth/naver?ticket=Q2hhbGxlbmdl' }
             Cache-Control:
               schema: { type: string, example: no-store }
             Referrer-Policy:
               schema: { type: string, example: no-referrer }
+
+  /auth/social/naver/app/complete:
+    post:
+      tags: [auth]
+      summary: 네이버 앱(iOS) 로그인 완료
+      description: |
+        콜백에서 받은 ticket 과 시작 때의 codeVerifier 를 보낸다. 서버는 ticket 을 1회 소비하고
+        `BASE64URL(SHA-256(codeVerifier))` 가 시작 때의 codeChallenge 와 같을 때만 웹 소셜 로그인과 같은 판정을 한다.
+        응답은 `/auth/social/{provider}/login` 과 같다(LOGGED_IN / LINK_REQUIRED).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NaverAppCompleteRequest'
+      responses:
+        '200':
+          description: 판정 결과 — data.status 로 분기
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_SocialLoginResponse'
+        '400':
+          description: 필수값 누락·형식 오류, 또는 네이버 계정 이메일 미제공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '401':
+          description: |
+            `SOCIAL_APP_TICKET_INVALID`: ticket 없음·만료·이미 사용됨·codeVerifier 불일치(구분하지 않음, ticket 은 소비됨) — 로그인을 처음부터 다시
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '409':
+          description: 다른 소셜로 가입된 이메일, 같은 제공자의 다른 계정이 이미 연결됨
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
+        '503':
+          description: 저장소(Redis) 장애
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_Error'
 
   # ================================================================
   # EVENTS
@@ -1251,7 +1347,8 @@ components:
         error: { type: string, example: '이미 사용중인 이메일입니다.' }
         code:
           type: string
-          enum: [INVALID_REFRESH_TOKEN, SESSION_REVOKED]
+          enum: [INVALID_REFRESH_TOKEN, SESSION_REVOKED, SOCIAL_APP_TICKET_INVALID, SOCIAL_LINK_EXPIRED,
+                 SOCIAL_LINK_WRONG_PASSWORD, SOCIAL_LINK_ATTEMPTS_EXCEEDED]
           description: |
             선택 필드. 클라이언트 분기가 필요한 오류에만 포함되고, 없으면 필드 자체가 생략된다.
             클라이언트는 error 문구가 아니라 code 로만 분기한다.
@@ -1502,6 +1599,40 @@ components:
         password:
           type: string
           maxLength: 128
+
+    NaverAppStartRequest:
+      type: object
+      required: [codeChallenge]
+      properties:
+        codeChallenge:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: BASE64URL(SHA-256(codeVerifier)), 패딩 없음
+          example: E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM
+
+    NaverAppStartResponse:
+      type: object
+      properties:
+        authorizeUrl:
+          type: string
+          example: 'https://nid.naver.com/oauth2.0/authorize?response_type=code&client_id=xxx&redirect_uri=...&state=...'
+        expiresInSeconds:
+          type: integer
+          format: int64
+          example: 600
+
+    NaverAppCompleteRequest:
+      type: object
+      required: [ticket, codeVerifier]
+      properties:
+        ticket:
+          type: string
+          maxLength: 128
+        codeVerifier:
+          type: string
+          pattern: '^[A-Za-z0-9._~-]{43,128}$'
+          description: RFC 7636 문자 집합 43~128자
+          example: dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
 
     # ── Events ──────────────────────────────────────────────────────
     EventRequest:
