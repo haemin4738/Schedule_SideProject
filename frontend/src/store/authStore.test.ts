@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { useAuthStore } from './authStore'
 
+/** 다른 탭이 localStorage 를 바꾼 것처럼 storage 이벤트를 보낸다 (같은 탭의 setItem 은 이벤트를 만들지 않는다) */
+const otherTabSets = (key: string | null, value: string | null) => {
+  if (key === null) localStorage.clear()
+  else if (value === null) localStorage.removeItem(key)
+  else localStorage.setItem(key, value)
+  window.dispatchEvent(new StorageEvent('storage', { key, newValue: value, storageArea: localStorage }))
+}
+
 describe('authStore', () => {
   afterEach(() => {
     localStorage.clear()
@@ -38,5 +46,53 @@ describe('authStore', () => {
     useAuthStore.getState().clearSessionNotice()
 
     expect(useAuthStore.getState().sessionNotice).toBeNull()
+  })
+
+  it('storage_otherTabLogsOut_clearsAccessTokenInThisTab', () => {
+    useAuthStore.getState().login('acc', 'ref')
+
+    otherTabSets('accessToken', null)
+
+    expect(useAuthStore.getState().accessToken).toBeNull()
+  })
+
+  it('storage_otherTabLogsIn_setsAccessTokenInThisTab', () => {
+    otherTabSets('accessToken', 'other-acc')
+
+    expect(useAuthStore.getState().accessToken).toBe('other-acc')
+  })
+
+  it('storage_otherTabRefreshes_usesNewAccessToken', () => {
+    useAuthStore.getState().login('acc', 'ref')
+
+    otherTabSets('accessToken', 'rotated-acc')
+
+    expect(useAuthStore.getState().accessToken).toBe('rotated-acc')
+  })
+
+  it('storage_otherTabClearsStorage_clearsAccessToken', () => {
+    useAuthStore.getState().login('acc', 'ref')
+
+    otherTabSets(null, null)
+
+    expect(useAuthStore.getState().accessToken).toBeNull()
+  })
+
+  it('storage_unrelatedKeyChanged_keepsState', () => {
+    useAuthStore.getState().login('acc', 'ref')
+    localStorage.removeItem('accessToken') // 상태는 그대로 두고 저장소만 어긋나게 해서, 다른 키 이벤트로는 다시 읽지 않음을 확인
+
+    otherTabSets('lifelog.calendar.layers.v1', '{}')
+
+    expect(useAuthStore.getState().accessToken).toBe('acc')
+  })
+
+  it('storage_sessionStorageEvent_isIgnored', () => {
+    useAuthStore.getState().login('acc', 'ref')
+    localStorage.removeItem('accessToken')
+
+    window.dispatchEvent(new StorageEvent('storage', { key: 'accessToken', storageArea: sessionStorage }))
+
+    expect(useAuthStore.getState().accessToken).toBe('acc')
   })
 })
