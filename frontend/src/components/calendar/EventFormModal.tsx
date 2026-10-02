@@ -13,7 +13,7 @@ import {
   HEX_COLOR,
 } from '@/constants/eventCategory'
 import dayjs from 'dayjs'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { toEventRequest, type EventFormValues as FormValues } from './calendarUtils'
 
@@ -24,6 +24,8 @@ interface Props {
   defaultStart: Date
   defaultEnd: Date
   defaultAllDay?: boolean
+  /** 제목 위에 붙일 내용 (캘린더의 입력 종류 탭) */
+  header?: ReactNode
   onClose: () => void
   onSaved: () => void
 }
@@ -67,7 +69,15 @@ const toFormValues = (event: EventDetail | null, start: Date, end: Date, allDay:
   }
 }
 
-export default function EventFormModal({ event, defaultStart, defaultEnd, defaultAllDay = false, onClose, onSaved }: Props) {
+export default function EventFormModal({
+  event,
+  defaultStart,
+  defaultEnd,
+  defaultAllDay = false,
+  header,
+  onClose,
+  onSaved,
+}: Props) {
   const isEdit = event !== null
   const [error, setError] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -174,6 +184,7 @@ export default function EventFormModal({ event, defaultStart, defaultEnd, defaul
         tabIndex={-1}
         className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl outline-none"
       >
+        {header}
         <h2 id="event-form-title" className="mb-4 text-lg font-semibold">
           {isEdit ? '일정 수정' : '새 일정'}
         </h2>

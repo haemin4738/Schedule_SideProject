@@ -1,19 +1,16 @@
 import { isTokenExpired, refreshSession } from '@/api/client'
 import { getApiErrorMessage } from '@/api/errorMessage'
 import { getEvent, getEventsInRange, MAX_EVENTS_IN_RANGE, type EventDetail } from '@/api/events'
+import { getExpenseCategories, type ExpenseCategory } from '@/api/expenses'
 import {
   jobApplicationToCalendarEvent,
   toCalendarEvent,
   visibleRange,
   type CalendarEvent,
 } from '@/components/calendar/calendarUtils'
-import {
-  CALENDAR_LAYER_OPTIONS,
-  loadLayers,
-  saveLayers,
-  type CalendarLayer,
-  type CalendarLayers,
-} from '@/components/calendar/calendarLayers'
+import { loadLayers, saveLayers, type CalendarLayer, type CalendarLayers } from '@/components/calendar/calendarLayers'
+import CalendarSidebar from '@/components/calendar/CalendarSidebar'
+import EntryTypeTabs, { type EntryKind } from '@/components/calendar/EntryTypeTabs'
 import { CalendarOverlayContext, type CalendarOverlayValue } from '@/components/calendar/calendarOverlayContext'
 import useCalendarOverlays from '@/components/calendar/useCalendarOverlays'
 import EventFormModal from '@/components/calendar/EventFormModal'
@@ -23,7 +20,9 @@ import {
   MonthDateHeader,
   MonthWeekdayHeader,
 } from '@/components/calendar/calendarParts'
-import LogoutButton from '@/components/LogoutButton'
+import ExpenseFormModal from '@/components/expenses/ExpenseFormModal'
+import { useDialog } from '@/components/expenses/useDialog'
+import JobApplicationFormModal from '@/components/jobApplications/JobApplicationFormModal'
 import { readableTextColor } from '@/constants/eventCategory'
 import { useAuthStore } from '@/store/authStore'
 import dayjs from 'dayjs'
@@ -38,7 +37,7 @@ import {
   type SlotInfo,
   type View,
 } from 'react-big-calendar'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 
 dayjs.locale('ko')
 const localizer = dayjsLocalizer(dayjs)
@@ -74,12 +73,38 @@ const formats: Formats = {
   agendaDateFormat: 'M월 D일 (ddd)',
 }
 
+/** 새로 입력할 때는 입력 종류(일정·구직활동·가계부)를 탭으로 바꿀 수 있고, 고른 날짜는 그대로 쓴다 */
 type ModalState =
-  | { mode: 'create'; start: Date; end: Date; allDay: boolean }
+  | { mode: 'create'; kind: EntryKind; start: Date; end: Date; allDay: boolean }
   | { mode: 'edit'; event: EventDetail }
   | null
 
-const NAV_LINK = 'rounded-md px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100'
+/** 가계부 입력에 쓰는 카테고리 — 가계부 탭을 처음 열 때 불러온다 */
+type CategoriesState = { list: ExpenseCategory[]; error: string | null } | null
+
+/** 폰에서 왼쪽 패널을 여는 서랍 (데스크톱은 고정 사이드바) */
+function SidebarDrawer({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  const ref = useDialog<HTMLDivElement>(onClose)
+  return (
+    <div
+      className="fixed inset-0 z-40 bg-black/40 md:hidden"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-label="메뉴"
+        tabIndex={-1}
+        className="h-full w-72 max-w-[85vw] overflow-y-auto bg-white shadow-xl outline-none"
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
 
 export default function CalendarPage() {
   const [date, setDate] = useState(() => new Date())
@@ -90,10 +115,13 @@ export default function CalendarPage() {
   const [truncated, setTruncated] = useState(false)
   const [modal, setModal] = useState<ModalState>(null)
   const [layers, setLayers] = useState<CalendarLayers>(loadLayers)
+  const [overlayReload, setOverlayReload] = useState(0)
+  const [categories, setCategories] = useState<CategoriesState>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const navigate = useNavigate()
 
   const range = useMemo(() => visibleRange(date, view), [date, view])
-  const overlays = useCalendarOverlays(range, layers)
+  const overlays = useCalendarOverlays(range, layers, overlayReload)
 
   const notices = [
     ...(truncated && layers.events ? [`일정이 너무 많아 앞의 ${MAX_EVENTS_IN_RANGE.toLocaleString('ko-KR')}개만 표시합니다.`] : []),
@@ -185,7 +213,28 @@ export default function CalendarPage() {
     return () => es.close()
   }, [accessToken])
 
-  const openCreate = (start: Date, end: Date, allDay: boolean) => setModal({ mode: 'create', start, end, allDay })
+  const openCreate = (start: Date, end: Date, allDay: boolean) =>
+    setModal({ mode: 'create', kind: 'event', start, end, allDay })
+
+  const changeEntryKind = (kind: EntryKind) =>
+    setModal((current) => (current?.mode === 'create' ? { ...current, kind } : current))
+
+  // 가계부 탭을 처음 열 때 카테고리를 불러온다 (실패 상태는 입력 창을 닫을 때 지워 다음에 다시 시도한다)
+  const needsCategories = modal?.mode === 'create' && modal.kind === 'expense'
+  useEffect(() => {
+    if (!needsCategories || categories !== null) return
+    let cancelled = false
+    getExpenseCategories()
+      .then(({ data }) => {
+        if (!cancelled) setCategories({ list: data.data, error: null })
+      })
+      .catch((err) => {
+        if (!cancelled) setCategories({ list: [], error: getApiErrorMessage(err, '카테고리를 불러오지 못했습니다.') })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [needsCategories, categories])
 
   const onSelectSlot = (slot: SlotInfo) => {
     if (view === 'month') {
@@ -246,118 +295,147 @@ export default function CalendarPage() {
     openCreate(start.toDate(), start.add(1, 'hour').toDate(), false)
   }
 
+  const closeModal = () => {
+    setModal(null)
+    setCategories((current) => (current?.error ? null : current))
+  }
+
   const onSaved = () => {
     setModal(null)
     loadEvents()
   }
 
+  const onOverlaySaved = () => {
+    setModal(null)
+    setOverlayReload((n) => n + 1)
+  }
+
+  const entryTabs =
+    modal?.mode === 'create' ? <EntryTypeTabs value={modal.kind} onChange={changeEntryKind} /> : undefined
+
+  const sidebar = (onNavigate?: () => void) => (
+    <CalendarSidebar layers={layers} onToggleLayer={toggleLayer} onCreate={onCreateClick} onNavigate={onNavigate} />
+  )
+
   return (
     <div className="flex h-screen flex-col bg-white">
-      <header className="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-2">
-        <h1 className="text-lg font-semibold text-gray-800">Lifelog</h1>
+      <header className="flex items-center gap-2 border-b border-gray-200 px-3 py-2">
         <button
           type="button"
-          onClick={onCreateClick}
-          className="flex items-center gap-1 rounded-full bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-50"
+          aria-label="메뉴 열기"
+          onClick={() => setDrawerOpen(true)}
+          className="rounded-full p-2 text-gray-600 hover:bg-gray-100 md:hidden"
         >
-          <span aria-hidden="true" className="text-lg leading-none text-blue-600">
-            +
+          <span aria-hidden="true" className="block text-xl leading-none">
+            ☰
           </span>
-          만들기
         </button>
-        <nav aria-label="주요 메뉴" className="ml-auto flex items-center gap-1">
-          <Link to="/" aria-current="page" className={`${NAV_LINK} bg-blue-50 font-medium text-blue-700 hover:bg-blue-50`}>
-            캘린더
-          </Link>
-          <Link to="/job-applications" className={NAV_LINK}>
-            구직활동
-          </Link>
-          <Link to="/expenses" className={NAV_LINK}>
-            가계부
-          </Link>
-        </nav>
-        <LogoutButton />
+        <h1 className="px-1 text-lg font-semibold text-gray-800">Lifelog</h1>
       </header>
 
-      {error && (
-        <p role="alert" className="mx-4 mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
+      <div className="flex min-h-0 flex-1">
+        {/* 데스크톱: 왼쪽 고정 패널 (약 20%) */}
+        <aside className="hidden w-60 shrink-0 overflow-y-auto border-r border-gray-100 md:block">{sidebar()}</aside>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          {error && (
+            <p role="alert" className="mx-4 mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </p>
+          )}
+
+          {/* live region 은 항상 두고 내용만 바꾼다 (내용과 함께 새로 삽입되면 스크린리더가 읽지 않을 수 있다) */}
+          <div role="status" className={notices.length > 0 ? 'mx-4 mt-2' : 'sr-only'}>
+            {notices.length > 0 && (
+              <p className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{notices.join(' ')}</p>
+            )}
+          </div>
+
+          <main className="lifelog-calendar min-h-0 flex-1 p-2 md:p-4">
+            <CalendarOverlayContext value={overlayValue}>
+              <Calendar<CalendarEvent>
+                localizer={localizer}
+                culture="ko"
+                events={calendarItems}
+                date={date}
+                view={view}
+                views={VIEWS}
+                onNavigate={setDate}
+                onView={setView}
+                messages={messages}
+                formats={formats}
+                selectable
+                popup
+                onSelectSlot={onSelectSlot}
+                onSelectEvent={onSelectEvent}
+                // 주·일 보기의 일정은 포커스는 되지만 Enter 로 열리지 않아 직접 연결한다
+                onKeyPressEvent={(event, e) => {
+                  const ke = e as React.KeyboardEvent<HTMLElement>
+                  if (ke.key === 'Enter' || ke.key === ' ') {
+                    ke.preventDefault()
+                    void onSelectEvent(event)
+                  }
+                }}
+                scrollToTime={dayjs().hour(8).minute(0).toDate()}
+                eventPropGetter={(event) => ({
+                  style: { backgroundColor: event.color, color: readableTextColor(event.color) },
+                })}
+                components={{
+                  toolbar: CalendarToolbar,
+                  month: { header: MonthWeekdayHeader, dateHeader: MonthDateHeader, event: EventLabel },
+                  week: { header: DayColumnHeader, event: EventLabel },
+                  day: { header: DayColumnHeader, event: EventLabel },
+                }}
+                style={{ height: '100%' }}
+              />
+            </CalendarOverlayContext>
+          </main>
+        </div>
+      </div>
+
+      {drawerOpen && (
+        <SidebarDrawer onClose={() => setDrawerOpen(false)}>{sidebar(() => setDrawerOpen(false))}</SidebarDrawer>
       )}
 
-      {/* live region 은 항상 두고 내용만 바꾼다 (내용과 함께 새로 삽입되면 스크린리더가 읽지 않을 수 있다) */}
-      <div role="status" className={notices.length > 0 ? 'mx-4 mt-2' : 'sr-only'}>
-        {notices.length > 0 && (
-          <p className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{notices.join(' ')}</p>
-        )}
-      </div>
-
-      <div role="group" aria-label="캘린더에 표시할 항목" className="flex flex-wrap gap-2 px-4 pt-3">
-        {CALENDAR_LAYER_OPTIONS.map(([layer, label]) => (
-          <button
-            key={layer}
-            type="button"
-            aria-pressed={layers[layer]}
-            onClick={() => toggleLayer(layer)}
-            className={`rounded-full border px-3 py-1 text-xs ${
-              layers[layer]
-                ? 'border-blue-200 bg-blue-50 font-medium text-blue-700'
-                : 'border-gray-300 text-gray-500 hover:bg-gray-50'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <main className="lifelog-calendar min-h-0 flex-1 p-4">
-        <CalendarOverlayContext value={overlayValue}>
-          <Calendar<CalendarEvent>
-            localizer={localizer}
-            culture="ko"
-            events={calendarItems}
-            date={date}
-            view={view}
-            views={VIEWS}
-            onNavigate={setDate}
-            onView={setView}
-            messages={messages}
-            formats={formats}
-            selectable
-            popup
-            onSelectSlot={onSelectSlot}
-            onSelectEvent={onSelectEvent}
-            // 주·일 보기의 일정은 포커스는 되지만 Enter 로 열리지 않아 직접 연결한다
-            onKeyPressEvent={(event, e) => {
-              const ke = e as React.KeyboardEvent<HTMLElement>
-              if (ke.key === 'Enter' || ke.key === ' ') {
-                ke.preventDefault()
-                void onSelectEvent(event)
-              }
-            }}
-            scrollToTime={dayjs().hour(8).minute(0).toDate()}
-            eventPropGetter={(event) => ({
-              style: { backgroundColor: event.color, color: readableTextColor(event.color) },
-            })}
-            components={{
-              toolbar: CalendarToolbar,
-              month: { header: MonthWeekdayHeader, dateHeader: MonthDateHeader, event: EventLabel },
-              week: { header: DayColumnHeader, event: EventLabel },
-              day: { header: DayColumnHeader, event: EventLabel },
-            }}
-            style={{ height: '100%' }}
-          />
-        </CalendarOverlayContext>
-      </main>
-
-      {modal && (
+      {modal?.mode === 'edit' && (
         <EventFormModal
-          event={modal.mode === 'edit' ? modal.event : null}
-          defaultStart={modal.mode === 'create' ? modal.start : new Date()}
-          defaultEnd={modal.mode === 'create' ? modal.end : new Date()}
-          defaultAllDay={modal.mode === 'create' ? modal.allDay : false}
-          onClose={() => setModal(null)}
+          event={modal.event}
+          defaultStart={new Date()}
+          defaultEnd={new Date()}
+          onClose={closeModal}
           onSaved={onSaved}
+        />
+      )}
+      {modal?.mode === 'create' && modal.kind === 'event' && (
+        <EventFormModal
+          event={null}
+          defaultStart={modal.start}
+          defaultEnd={modal.end}
+          defaultAllDay={modal.allDay}
+          header={entryTabs}
+          onClose={closeModal}
+          onSaved={onSaved}
+        />
+      )}
+      {modal?.mode === 'create' && modal.kind === 'jobApplication' && (
+        <JobApplicationFormModal
+          defaultAppliedAt={dayjs(modal.start).format('YYYY-MM-DD')}
+          header={entryTabs}
+          onClose={closeModal}
+          onSaved={onOverlaySaved}
+        />
+      )}
+      {modal?.mode === 'create' && modal.kind === 'expense' && (
+        <ExpenseFormModal
+          expense={null}
+          defaultDate={dayjs(modal.start).format('YYYY-MM-DD')}
+          categories={categories?.list ?? []}
+          categoriesLoading={categories === null}
+          categoriesError={categories?.error ?? null}
+          header={entryTabs}
+          onClose={closeModal}
+          onSaved={onOverlaySaved}
+          onManageCategories={() => navigate('/expenses')}
         />
       )}
     </div>

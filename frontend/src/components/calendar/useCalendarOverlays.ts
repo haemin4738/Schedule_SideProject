@@ -47,8 +47,13 @@ const groupByDate = <T extends { date: string }>(items: T[]): Map<string, T[]> =
  * - 특일은 공휴일 토글을 꺼도 날짜 숫자를 빨갛게 칠하는 데 쓰므로 항상 불러온다
  * - 가계부·구직활동은 토글이 켜져 있을 때만 요청한다
  * - 레이어마다 요청 순번을 두어 늦게 도착한 이전 기간 응답이 현재 화면을 덮어쓰지 않게 한다
+ * - reloadKey 가 바뀌면 가계부·구직활동을 다시 불러온다 (캘린더에서 새로 입력한 뒤)
  */
-export default function useCalendarOverlays(range: { from: Date; to: Date }, layers: CalendarLayers): CalendarOverlays {
+export default function useCalendarOverlays(
+  range: { from: Date; to: Date },
+  layers: CalendarLayers,
+  reloadKey = 0,
+): CalendarOverlays {
   const from = dayjs(range.from).format(DATE_FORMAT)
   const to = dayjs(range.to).format(DATE_FORMAT)
   const key = `${from}|${to}`
@@ -80,7 +85,7 @@ export default function useCalendarOverlays(range: { from: Date; to: Date }, lay
       .catch(() => {
         if (mine === seq.current.expenses) setExpenses({ key, data: [], error: ERROR_MESSAGES.expenses })
       })
-  }, [from, to, key, showExpenses])
+  }, [from, to, key, showExpenses, reloadKey])
 
   const showJobApplications = layers.jobApplications
   useEffect(() => {
@@ -94,7 +99,7 @@ export default function useCalendarOverlays(range: { from: Date; to: Date }, lay
         if (mine === seq.current.jobApplications)
           setJobApplications({ key, data: [], error: ERROR_MESSAGES.jobApplications })
       })
-  }, [from, to, key, showJobApplications])
+  }, [from, to, key, showJobApplications, reloadKey])
 
   return useMemo(() => {
     // 기간이 바뀐 직후(새 응답 전)나 토글을 끈 레이어는 비워 둔다

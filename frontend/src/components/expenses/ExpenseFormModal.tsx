@@ -12,7 +12,7 @@ import {
   MIN_AMOUNT,
   type ExpenseType,
 } from '@/constants/expenseType'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useDialog } from './useDialog'
 import { useForm, useWatch } from 'react-hook-form'
 
@@ -32,9 +32,13 @@ interface Props {
   categories: ExpenseCategory[]
   /** 카테고리 조회 실패 메시지. 있으면 저장을 막고 '카테고리 추가' 안내 대신 오류를 보여준다 */
   categoriesError?: string | null
+  /** 카테고리를 불러오는 중이면 true — 그동안 '카테고리 추가' 안내 대신 불러오는 중으로 보여주고 저장을 막는다 */
+  categoriesLoading?: boolean
   onClose: () => void
   onSaved: () => void
   onManageCategories: () => void
+  /** 제목 위에 붙일 내용 (캘린더의 입력 종류 탭) */
+  header?: ReactNode
 }
 
 const inputClass =
@@ -45,9 +49,11 @@ export default function ExpenseFormModal({
   defaultDate,
   categories,
   categoriesError = null,
+  categoriesLoading = false,
   onClose,
   onSaved,
   onManageCategories,
+  header,
 }: Props) {
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -82,7 +88,7 @@ export default function ExpenseFormModal({
   register('type')
   const selectedType = useWatch({ control, name: 'type' })
   const typeCategories = categories.filter((c) => c.type === selectedType)
-  const noCategories = !categoriesError && typeCategories.length === 0
+  const noCategories = !categoriesLoading && !categoriesError && typeCategories.length === 0
 
   const changeType = (type: ExpenseType) => {
     if (type === selectedType) return
@@ -124,6 +130,7 @@ export default function ExpenseFormModal({
         onSubmit={handleSubmit(onSubmit)}
         className="max-h-full w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow"
       >
+        {header}
         <h2 className="mb-4 text-lg font-medium">{expense ? '내역 수정' : '내역 추가'}</h2>
 
         <div className="mb-3 flex gap-2">
@@ -144,7 +151,11 @@ export default function ExpenseFormModal({
 
         <div className="grid grid-cols-1 gap-3">
           <div>
-            {categoriesError ? (
+            {categoriesLoading ? (
+              <p role="status" className="rounded border p-3 text-sm text-gray-500">
+                카테고리를 불러오는 중…
+              </p>
+            ) : categoriesError ? (
               <p role="alert" className="rounded border border-red-200 p-3 text-sm text-red-500">
                 {categoriesError}
               </p>
@@ -240,7 +251,7 @@ export default function ExpenseFormModal({
           </button>
           <button
             type="submit"
-            disabled={isSubmitting || noCategories || !!categoriesError}
+            disabled={isSubmitting || categoriesLoading || noCategories || !!categoriesError}
             className="rounded bg-blue-500 px-4 py-2 text-sm text-white hover:bg-blue-600 disabled:opacity-50"
           >
             저장
