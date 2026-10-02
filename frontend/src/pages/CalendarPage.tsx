@@ -75,7 +75,7 @@ const formats: Formats = {
 
 /** 새로 입력할 때는 입력 종류(일정·구직활동·가계부)를 탭으로 바꿀 수 있고, 고른 날짜는 그대로 쓴다 */
 type ModalState =
-  | { mode: 'create'; kind: EntryKind; start: Date; end: Date; allDay: boolean }
+  | { mode: 'create'; kind: EntryKind; start: Date; end: Date; allDay: boolean; switched?: boolean }
   | { mode: 'edit'; event: EventDetail }
   | null
 
@@ -118,6 +118,18 @@ export default function CalendarPage() {
   const [overlayReload, setOverlayReload] = useState(0)
   const [categories, setCategories] = useState<CategoriesState>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+
+  // 서랍이 열린 채 화면이 넓어지면(창 크기 조절·태블릿 회전) 보이지 않는 서랍이 키보드를 가두지 않게 닫는다
+  useEffect(() => {
+    if (!drawerOpen || typeof window.matchMedia !== 'function') return
+    const desktop = window.matchMedia('(min-width: 768px)')
+    const close = () => {
+      if (desktop.matches) setDrawerOpen(false)
+    }
+    close()
+    desktop.addEventListener('change', close)
+    return () => desktop.removeEventListener('change', close)
+  }, [drawerOpen])
   const navigate = useNavigate()
 
   const range = useMemo(() => visibleRange(date, view), [date, view])
@@ -217,7 +229,9 @@ export default function CalendarPage() {
     setModal({ mode: 'create', kind: 'event', start, end, allDay })
 
   const changeEntryKind = (kind: EntryKind) =>
-    setModal((current) => (current?.mode === 'create' ? { ...current, kind } : current))
+    setModal((current) =>
+      current?.mode === 'create' && current.kind !== kind ? { ...current, kind, switched: true } : current,
+    )
 
   // 가계부 탭을 처음 열 때 카테고리를 불러온다 (실패 상태는 입력 창을 닫을 때 지워 다음에 다시 시도한다)
   const needsCategories = modal?.mode === 'create' && modal.kind === 'expense'
@@ -311,7 +325,9 @@ export default function CalendarPage() {
   }
 
   const entryTabs =
-    modal?.mode === 'create' ? <EntryTypeTabs value={modal.kind} onChange={changeEntryKind} /> : undefined
+    modal?.mode === 'create' ? (
+      <EntryTypeTabs value={modal.kind} onChange={changeEntryKind} focusSelected={modal.switched} />
+    ) : undefined
 
   const sidebar = (onNavigate?: () => void) => (
     <CalendarSidebar layers={layers} onToggleLayer={toggleLayer} onCreate={onCreateClick} onNavigate={onNavigate} />
