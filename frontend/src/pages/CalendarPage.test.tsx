@@ -4,8 +4,8 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CalendarPage from './CalendarPage'
 import { getEvent, getEventsInRange, type EventSummary } from '@/api/events'
-import { getDailySummary } from '@/api/expenses'
-import { getJobApplicationsInRange, type JobApplicationSummary } from '@/api/jobApplications'
+import { createExpense, getDailySummary, getExpenseCategories } from '@/api/expenses'
+import { createJobApplication, getJobApplicationsInRange, type JobApplicationSummary } from '@/api/jobApplications'
 import { getSpecialDays, type SpecialDay } from '@/api/specialDays'
 import { LAYERS_STORAGE_KEY } from '@/components/calendar/calendarLayers'
 import { useAuthStore } from '@/store/authStore'
@@ -19,10 +19,13 @@ vi.mock('@/api/specialDays', () => ({ getSpecialDays: vi.fn() }))
 vi.mock('@/api/expenses', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/expenses')>()),
   getDailySummary: vi.fn(),
+  getExpenseCategories: vi.fn(),
+  createExpense: vi.fn(),
 }))
 vi.mock('@/api/jobApplications', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/jobApplications')>()),
   getJobApplicationsInRange: vi.fn(),
+  createJobApplication: vi.fn(),
 }))
 vi.mock('@/components/LogoutButton', () => ({ default: () => <button type="button">로그아웃</button> }))
 
@@ -31,6 +34,9 @@ const mockedGet = vi.mocked(getEvent)
 const mockedSpecialDays = vi.mocked(getSpecialDays)
 const mockedDaily = vi.mocked(getDailySummary)
 const mockedJobs = vi.mocked(getJobApplicationsInRange)
+const mockedCategories = vi.mocked(getExpenseCategories)
+const mockedCreateExpense = vi.mocked(createExpense)
+const mockedCreateJob = vi.mocked(createJobApplication)
 
 const specialDaysRes = (data: SpecialDay[]) => ({ data: { success: true, data } }) as never
 const dailyRes = (days: { date: string; income: number; expense: number; net: number }[]) =>
@@ -507,6 +513,179 @@ describe('CalendarPage', () => {
       expect(await screen.findByText(JOB_TITLE)).toBeInTheDocument()
       expect(await screen.findByText('팀 회의')).toBeInTheDocument()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('캘린더에서 바로 입력', () => {
+    const entryTab = (name: string) => within(screen.getByRole('group', { name: '입력 종류' })).getByRole('button', { name })
+
+    it('onCreateClick_showsEntryTabsWithEventSelected', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await user.click(screen.getByRole('button', { name: /만들기/ }))
+
+      expect(entryTab('일정')).toHaveAttribute('aria-pressed', 'true')
+      expect(entryTab('구직활동')).toHaveAttribute('aria-pressed', 'false')
+      expect(screen.getByRole('dialog', { name: '새 일정' })).toBeInTheDocument()
+    })
+
+    it('onSelectEvent_editMode_hasNoEntryTabs', async () => {
+      const user = userEvent.setup()
+      mockedRange.mockResolvedValue([summary()])
+      mockedGet.mockResolvedValue({
+        data: { success: true, data: { ...summary(), description: null, location: null, createdAt: '', updatedAt: '' } },
+      } as never)
+      renderPage()
+
+      await user.click(await screen.findByText('팀 회의'))
+
+      expect(await screen.findByRole('dialog', { name: '일정 수정' })).toBeInTheDocument()
+      expect(screen.queryByRole('group', { name: '입력 종류' })).not.toBeInTheDocument()
+    })
+
+    it('onTabJobApplication_savesWithSelectedDateAndReloadsOverlay', async () => {
+      const user = userEvent.setup()
+      mockedCreateJob.mockResolvedValue({} as never)
+      renderPage()
+      await waitFor(() => expect(mockedJobs).toHaveBeenCalledTimes(1))
+
+      await user.click(screen.getByRole('button', { name: /만들기/ }))
+      await user.click(entryTab('구직활동'))
+
+      const dialog = screen.getByRole('dialog', { name: '구직활동 추가' })
+      // 만들기는 오늘(9/30) 기준
+      expect(within(dialog).getByLabelText('지원일')).toHaveValue('2026-09-30')
+      await user.type(within(dialog).getByLabelText('회사명'), '라이프로그')
+      await user.type(within(dialog).getByLabelText('지원 직무'), '백엔드')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() =>
+        expect(mockedCreateJob).toHaveBeenCalledWith({
+          companyName: '라이프로그',
+          position: '백엔드',
+          status: 'APPLIED',
+          appliedAt: '2026-09-30',
+          jobPostingUrl: undefined,
+          memo: undefined,
+        }),
+      )
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      await waitFor(() => expect(mockedJobs).toHaveBeenCalledTimes(2))
+    })
+
+    it('onTabJobApplication_blankCompany_showsErrorWithoutSaving', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await user.click(screen.getByRole('button', { name: /만들기/ }))
+      await user.click(entryTab('구직활동'))
+      const dialog = screen.getByRole('dialog', { name: '구직활동 추가' })
+      await user.type(within(dialog).getByLabelText('회사명'), '   ')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      expect(await within(dialog).findByText('회사명은 필수입니다.')).toBeInTheDocument()
+      expect(mockedCreateJob).not.toHaveBeenCalled()
+    })
+
+    it('onTabExpense_loadsCategoriesOnceAndSavesWithSelectedDate', async () => {
+      const user = userEvent.setup()
+      mockedCategories.mockResolvedValue({
+        data: { success: true, data: [{ id: 3, type: 'EXPENSE', name: '식비' }] },
+      } as never)
+      mockedCreateExpense.mockResolvedValue({} as never)
+      renderPage()
+      await waitFor(() => expect(mockedDaily).toHaveBeenCalledTimes(1))
+
+      await user.click(screen.getByRole('button', { name: /만들기/ }))
+      await user.click(entryTab('가계부'))
+
+      const dialog = screen.getByRole('dialog', { name: '내역 추가' })
+      await user.selectOptions(await within(dialog).findByLabelText('카테고리'), '3')
+      await user.type(within(dialog).getByPlaceholderText('금액 (원)'), '12000')
+      expect(within(dialog).getByLabelText('날짜')).toHaveValue('2026-09-30')
+      // 탭을 오가도 카테고리는 다시 불러오지 않는다
+      await user.click(entryTab('일정'))
+      await user.click(entryTab('가계부'))
+      await user.selectOptions(await screen.findByLabelText('카테고리'), '3')
+      await user.type(screen.getByPlaceholderText('금액 (원)'), '12000')
+      await user.click(within(screen.getByRole('dialog', { name: '내역 추가' })).getByRole('button', { name: '저장' }))
+
+      await waitFor(() =>
+        expect(mockedCreateExpense).toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'EXPENSE', categoryId: 3, amount: 12000, transactionDate: '2026-09-30' }),
+        ),
+      )
+      expect(mockedCategories).toHaveBeenCalledTimes(1)
+      await waitFor(() => expect(mockedDaily).toHaveBeenCalledTimes(2))
+    })
+
+    it('onTabExpense_whileLoadingCategories_showsLoadingAndDisablesSave', async () => {
+      const user = userEvent.setup()
+      mockedCategories.mockReturnValue(new Promise(() => {}) as never)
+      renderPage()
+
+      await user.click(screen.getByRole('button', { name: /만들기/ }))
+      await user.click(entryTab('가계부'))
+
+      const dialog = screen.getByRole('dialog', { name: '내역 추가' })
+      expect(within(dialog).getByText('카테고리를 불러오는 중…')).toBeInTheDocument()
+      expect(within(dialog).queryByText('먼저 카테고리를 추가하세요.')).not.toBeInTheDocument()
+      expect(within(dialog).getByRole('button', { name: '저장' })).toBeDisabled()
+    })
+
+    it('onTabExpense_categoriesFail_showsErrorAndRetriesNextTime', async () => {
+      const user = userEvent.setup()
+      mockedCategories.mockRejectedValueOnce(new Error('Network Error')).mockResolvedValue({
+        data: { success: true, data: [] },
+      } as never)
+      renderPage()
+
+      await user.click(screen.getByRole('button', { name: /만들기/ }))
+      await user.click(entryTab('가계부'))
+      expect(await screen.findByText('카테고리를 불러오지 못했습니다.')).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: '취소' }))
+      await user.click(screen.getByRole('button', { name: /만들기/ }))
+      await user.click(entryTab('가계부'))
+
+      expect(await screen.findByText('먼저 카테고리를 추가하세요.')).toBeInTheDocument()
+      expect(mockedCategories).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('메뉴 서랍(폰)', () => {
+    it('onMenuOpen_showsSidebarInDialogAndClosesOnNavigate', async () => {
+      const user = userEvent.setup()
+      renderWithRoutes()
+
+      await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+      const drawer = screen.getByRole('dialog', { name: '메뉴' })
+      await user.click(within(drawer).getByRole('link', { name: '가계부' }))
+
+      expect(await screen.findByTestId('location')).toHaveTextContent('/expenses')
+    })
+
+    it('onMenuOpen_escapeCloses', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+      expect(screen.getByRole('dialog', { name: '메뉴' })).toBeInTheDocument()
+      await user.keyboard('{Escape}')
+
+      expect(screen.queryByRole('dialog', { name: '메뉴' })).not.toBeInTheDocument()
+    })
+
+    it('onMenuCreate_closesDrawerAndOpensEntryModal', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+      await user.click(within(screen.getByRole('dialog', { name: '메뉴' })).getByRole('button', { name: /만들기/ }))
+
+      expect(screen.queryByRole('dialog', { name: '메뉴' })).not.toBeInTheDocument()
+      expect(screen.getByRole('dialog', { name: '새 일정' })).toBeInTheDocument()
     })
   })
 })
