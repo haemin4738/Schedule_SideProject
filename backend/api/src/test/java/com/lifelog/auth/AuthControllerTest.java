@@ -101,6 +101,30 @@ class AuthControllerTest {
     }
 
     @Test
+    void signup_whenNameIs12Chars_returns201() throws Exception {
+        when(authService.signup(any())).thenReturn(
+                new UserResponse(1L, "user@test.com", "가나다라마바사아자차카타", LocalDateTime.of(2026, 9, 28, 10, 0)));
+
+        mockMvc.perform(post(BASE + "/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SignupRequest("user@test.com", "Passw0rd!", "가나다라마바사아자차카타"))))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void signup_whenNameExceeds12Chars_returns400WithoutCallingService() throws Exception {
+        mockMvc.perform(post(BASE + "/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new SignupRequest("user@test.com", "Passw0rd!", "가나다라마바사아자차카타파"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("이름은 12자 이하여야 합니다."));
+        verify(authService, never()).signup(any());
+    }
+
+    @Test
     void login_whenLegacyPasswordNotMatchingSignupPolicy_passesValidationToService() throws Exception {
         when(authService.login(any())).thenReturn(TokenResponse.of("access", "refresh"));
 

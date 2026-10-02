@@ -67,7 +67,7 @@ export default function SignupPage() {
                 validate: (v) => v.trim().length > 0 || '이름을 입력해 주세요.',
               })}
               autoComplete="name"
-              maxLength={50}
+              maxLength={12}
               aria-invalid={errors.name ? true : undefined}
               aria-describedby={errors.name ? 'signup-name-error' : undefined}
               className={INPUT_CLASS}
