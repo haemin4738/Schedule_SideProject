@@ -20,6 +20,11 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      # Lettuce 기본 명령 timeout 60초 → Redis 장애 시 요청 스레드가 오래 묶이지 않게 줄인다.
+      # refresh 회전(Lua)이 timeout 뒤 서버에서 실행돼도 클라이언트는 직전 토큰을 다시 내게 되고,
+      # 겹침 구간(30초) 안이면 재발급·지나면 그 세션만 끝나므로 전체 세션 폐기로 번지지 않는다
+      timeout: 5s
+      connect-timeout: 2s
 
 server:
   port: 8080
