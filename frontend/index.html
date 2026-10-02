@@ -1,12 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
+    <!-- viewport-fit=cover: 홈 화면 앱(standalone)에서 노치·홈 인디케이터 영역까지 그리고, 여백은 safe-area-inset 으로 준다 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!-- OAuth 콜백 URL 의 code/state 가 교차 출처 Referer 로 새지 않도록 origin 만 보낸다 (RFC 9700 4.2.4) -->
     <meta name="referrer" content="strict-origin" />
-    <title>frontend</title>
+    <!-- 홈 화면에 추가(PWA) — iOS Safari 는 manifest 아이콘 대신 apple-touch-icon 을 쓴다 -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Lifelog" />
+    <title>Lifelog</title>
   </head>
   <body>
     <div id="root"></div>
