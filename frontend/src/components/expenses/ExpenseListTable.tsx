@@ -2,8 +2,10 @@ import type { ExpenseSummary, PageMeta } from '@/api/expenses'
 import { formatSignedAmount } from '@/constants/expenseType'
 import { paymentMethodLabel } from '@/constants/paymentMethod'
 import dayjs from 'dayjs'
+import ExpensePagination from './ExpensePagination'
 
-interface Props {
+/** 표(넓은 화면)와 카드(폰) 목록이 같은 props 를 받는다 */
+export interface ExpenseListProps {
   items: ExpenseSummary[]
   meta: PageMeta | null
   page: number
@@ -23,7 +25,7 @@ export default function ExpenseListTable({
   onEdit,
   onDelete,
   onPageChange,
-}: Props) {
+}: ExpenseListProps) {
   return (
     <>
       <div className="overflow-hidden rounded-xl bg-white shadow">
@@ -101,27 +103,7 @@ export default function ExpenseListTable({
         </table>
       </div>
 
-      {meta && meta.totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-center gap-2">
-          <button
-            onClick={() => onPageChange(Math.max(0, page - 1))}
-            disabled={page === 0}
-            className="rounded border px-3 py-1 text-sm disabled:opacity-40"
-          >
-            이전
-          </button>
-          <span className="text-sm text-gray-600">
-            {page + 1} / {meta.totalPages}
-          </span>
-          <button
-            onClick={() => onPageChange(Math.min(meta.totalPages - 1, page + 1))}
-            disabled={page >= meta.totalPages - 1}
-            className="rounded border px-3 py-1 text-sm disabled:opacity-40"
-          >
-            다음
-          </button>
-        </div>
-      )}
+      <ExpensePagination meta={meta} page={page} onPageChange={onPageChange} />
     </>
   )
 }

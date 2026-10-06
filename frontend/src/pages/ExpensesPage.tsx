@@ -17,12 +17,14 @@ import { getApiErrorMessage } from '@/api/errorMessage'
 import CategoryManagerModal from '@/components/expenses/CategoryManagerModal'
 import CategorySummarySection from '@/components/expenses/CategorySummarySection'
 import ExpenseFormModal from '@/components/expenses/ExpenseFormModal'
-import ExpenseListTable from '@/components/expenses/ExpenseListTable'
+import ExpenseCardList from '@/components/expenses/ExpenseCardList'
+import ExpenseListTable, { type ExpenseListProps } from '@/components/expenses/ExpenseListTable'
 import ExpenseSummaryCards from '@/components/expenses/ExpenseSummaryCards'
 import { EXPENSE_TYPE_LABELS, EXPENSE_TYPE_OPTIONS, type ExpenseType } from '@/constants/expenseType'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import LogoutButton from '@/components/LogoutButton'
+import { DESKTOP_MEDIA_QUERY, useMediaQuery } from '@/hooks/useMediaQuery'
 import { Link, useSearchParams } from 'react-router-dom'
 
 const PAGE_SIZE = 20
@@ -83,6 +85,8 @@ export default function ExpensesPage() {
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
   // 행을 빠르게 연속 클릭했을 때 마지막 클릭의 상세 조회만 폼에 반영하기 위한 요청 순번
   const editRequestSeq = useRef(0)
+  // 폰 폭에서는 표 대신 카드 목록. matchMedia 가 없는 환경(jsdom)은 기존 표로 본다
+  const isDesktop = useMediaQuery(DESKTOP_MEDIA_QUERY, true)
 
   const from = month.format(DATE_FORMAT)
   const to = month.endOf('month').format(DATE_FORMAT)
@@ -253,11 +257,21 @@ export default function ExpensesPage() {
 
   const isCurrentMonth = month.isSame(dayjs(), 'month')
   const defaultFormDate = isCurrentMonth ? dayjs().format(DATE_FORMAT) : from
+  const listProps: ExpenseListProps = {
+    items,
+    meta,
+    page,
+    isLoading,
+    error: listError,
+    onEdit: startEdit,
+    onDelete,
+    onPageChange: setPage,
+  }
   const filterCategories = typeFilter ? categories.filter((c) => c.type === typeFilter) : categories
 
   return (
     <div className="mx-auto max-w-4xl p-4">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">가계부</h1>
         <div className="flex items-center gap-3">
           <Link to="/" className="text-sm text-blue-500 hover:underline">
@@ -358,16 +372,7 @@ export default function ExpensesPage() {
         </p>
       )}
 
-      <ExpenseListTable
-        items={items}
-        meta={meta}
-        page={page}
-        isLoading={isLoading}
-        error={listError}
-        onEdit={startEdit}
-        onDelete={onDelete}
-        onPageChange={setPage}
-      />
+      {isDesktop ? <ExpenseListTable {...listProps} /> : <ExpenseCardList {...listProps} />}
 
       <CategorySummarySection byCategory={byCategory} />
 
