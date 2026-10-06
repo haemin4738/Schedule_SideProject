@@ -40,6 +40,11 @@ public class Expense {
     @Column(nullable = false)
     private Long amount;
 
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "payment_method", length = 20)
+    private PaymentMethod paymentMethod;
+
     @Column(name = "transaction_date", nullable = false)
     private LocalDate transactionDate;
 
@@ -66,13 +71,15 @@ public class Expense {
     }
 
     public static Expense create(User user, ExpenseCategory category, ExpenseType type, Long amount,
-                                 LocalDate transactionDate, String description, String memo) {
-        validate(category, type, amount);
+                                 PaymentMethod paymentMethod, LocalDate transactionDate,
+                                 String description, String memo) {
+        validate(category, type, amount, paymentMethod);
         Expense expense = new Expense();
         expense.user = user;
         expense.category = category;
         expense.type = type;
         expense.amount = amount;
+        expense.paymentMethod = paymentMethod;
         expense.transactionDate = transactionDate;
         expense.description = description;
         expense.memo = memo;
@@ -80,24 +87,30 @@ public class Expense {
     }
 
     public void update(ExpenseCategory category, ExpenseType type, Long amount,
-                       LocalDate transactionDate, String description, String memo) {
-        validate(category, type, amount);
+                       PaymentMethod paymentMethod, LocalDate transactionDate,
+                       String description, String memo) {
+        validate(category, type, amount, paymentMethod);
         // @PreUpdate 는 flush 때 실행돼 수정 응답에 이전 updatedAt 이 나가므로 여기서도 갱신한다
         this.updatedAt = LocalDateTime.now();
         this.category = category;
         this.type = type;
         this.amount = amount;
+        this.paymentMethod = paymentMethod;
         this.transactionDate = transactionDate;
         this.description = description;
         this.memo = memo;
     }
 
-    private static void validate(ExpenseCategory category, ExpenseType type, Long amount) {
+    private static void validate(ExpenseCategory category, ExpenseType type, Long amount,
+                                 PaymentMethod paymentMethod) {
         if (category == null || type == null || category.getType() != type) {
             throw new IllegalArgumentException("카테고리 유형과 내역 유형이 일치하지 않습니다.");
         }
         if (amount == null || amount <= 0) {
             throw new IllegalArgumentException("금액은 0보다 커야 합니다.");
+        }
+        if (type == ExpenseType.INCOME && paymentMethod != null) {
+            throw new IllegalArgumentException("수입 내역에는 결제수단을 지정할 수 없습니다.");
         }
     }
 }

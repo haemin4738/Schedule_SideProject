@@ -8,6 +8,7 @@ import com.lifelog.domain.expense.ExpenseDailyTotal;
 import com.lifelog.domain.expense.ExpenseMonthlyTotal;
 import com.lifelog.domain.expense.ExpenseRepository;
 import com.lifelog.domain.expense.ExpenseType;
+import com.lifelog.domain.expense.PaymentMethod;
 import com.lifelog.domain.user.User;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceException;
@@ -81,7 +82,7 @@ class ExpenseRepositoryImplTest {
     }
 
     private Expense save(User user, ExpenseCategory category, long amount, LocalDate date) {
-        return expenseRepository.save(Expense.create(user, category, category.getType(), amount, date, "설명", "메모"));
+        return expenseRepository.save(Expense.create(user, category, category.getType(), amount, null, date, "설명", "메모"));
     }
 
     private void flushAndClear() {
@@ -130,6 +131,46 @@ class ExpenseRepositoryImplTest {
         flushAndClear();
 
         assertThat(expenseRepository.findById(id)).isEmpty();
+    }
+
+    // ---- 결제수단 ----
+
+    @Test
+    void save_withPaymentMethod_persistsEnumNameAsVarchar() {
+        Expense saved = expenseRepository.save(Expense.create(user1, food, ExpenseType.EXPENSE, 10_000L,
+                PaymentMethod.CREDIT_CARD, LocalDate.of(2026, 9, 1), null, null));
+        flushAndClear();
+
+        Object raw = entityManager.createNativeQuery("SELECT payment_method FROM expenses WHERE id = :id")
+                .setParameter("id", saved.getId()).getSingleResult();
+        assertThat(raw).isEqualTo("CREDIT_CARD");
+        assertThat(expenseRepository.findById(saved.getId()).orElseThrow().getPaymentMethod())
+                .isEqualTo(PaymentMethod.CREDIT_CARD);
+    }
+
+    @Test
+    void save_withoutPaymentMethod_persistsNull() {
+        Expense saved = save(user1, food, 10_000L, LocalDate.of(2026, 9, 1));
+        flushAndClear();
+
+        Object raw = entityManager.createNativeQuery("SELECT payment_method FROM expenses WHERE id = :id")
+                .setParameter("id", saved.getId()).getSingleResult();
+        assertThat(raw).isNull();
+        assertThat(expenseRepository.findById(saved.getId()).orElseThrow().getPaymentMethod()).isNull();
+    }
+
+    @Test
+    void findByUserIdAndFilter_returnsPaymentMethod() {
+        Expense card = expenseRepository.save(Expense.create(user1, food, ExpenseType.EXPENSE, 1_000L,
+                PaymentMethod.EASY_PAY, LocalDate.of(2026, 9, 2), null, null));
+        Expense none = save(user1, transport, 2_000L, LocalDate.of(2026, 9, 1));
+        flushAndClear();
+
+        Page<Expense> page = expenseRepository.findByUserIdAndFilter(
+                user1.getId(), null, null, null, null, PageRequest.of(0, 20));
+
+        assertThat(page.getContent()).extracting(Expense::getId, Expense::getPaymentMethod)
+                .containsExactly(tuple(card.getId(), PaymentMethod.EASY_PAY), tuple(none.getId(), null));
     }
 
     // ---- 목록 필터 ----

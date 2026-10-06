@@ -3,6 +3,7 @@ package com.lifelog.expense;
 import tools.jackson.databind.ObjectMapper;
 import com.lifelog.common.exception.BusinessException;
 import com.lifelog.domain.expense.ExpenseType;
+import com.lifelog.domain.expense.PaymentMethod;
 import com.lifelog.expense.dto.CategorySummaryResponse;
 import com.lifelog.expense.dto.DailySummaryResponse;
 import com.lifelog.expense.dto.ExpenseRequest;
@@ -67,11 +68,11 @@ class ExpenseControllerTest {
     }
 
     private ExpenseRequest validRequest() {
-        return new ExpenseRequest(ExpenseType.EXPENSE, 10L, 12_000L, LocalDate.of(2026, 9, 1), "점심", "메모");
+        return new ExpenseRequest(ExpenseType.EXPENSE, 10L, 12_000L, null, LocalDate.of(2026, 9, 1), "점심", "메모");
     }
 
     private ExpenseResponse sampleResponse() {
-        return new ExpenseResponse(100L, ExpenseType.EXPENSE, 10L, "식비", 12_000L,
+        return new ExpenseResponse(100L, ExpenseType.EXPENSE, 10L, "식비", 12_000L, null,
                 LocalDate.of(2026, 9, 1), "점심", "메모",
                 LocalDateTime.of(2026, 9, 1, 12, 0), LocalDateTime.of(2026, 9, 1, 12, 0));
     }
@@ -94,7 +95,7 @@ class ExpenseControllerTest {
     @Test
     void list_whenNoParams_usesDefaultPagingAndReturnsPagedEnvelope() throws Exception {
         ExpenseSummary summary = new ExpenseSummary(100L, ExpenseType.EXPENSE, 10L, "식비",
-                12_000L, LocalDate.of(2026, 9, 1), "점심");
+                12_000L, null, LocalDate.of(2026, 9, 1), "점심");
         when(expenseService.list(eq(USER_ID), isNull(), isNull(), isNull(), isNull(), eq(PageRequest.of(0, 20))))
                 .thenReturn(new PageImpl<>(List.of(summary), PageRequest.of(0, 20), 1));
 
@@ -186,7 +187,7 @@ class ExpenseControllerTest {
 
     @Test
     void create_whenAmountZero_returns400() throws Exception {
-        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, 10L, 0L, LocalDate.of(2026, 9, 1), null, null);
+        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, 10L, 0L, null, LocalDate.of(2026, 9, 1), null, null);
 
         mockMvc.perform(post(BASE).with(asUser()).contentType(MediaType.APPLICATION_JSON).content(json(invalid)))
                 .andExpect(status().isBadRequest())
@@ -196,7 +197,7 @@ class ExpenseControllerTest {
 
     @Test
     void create_whenAmountExceedsMax_returns400() throws Exception {
-        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, 10L, 100_000_000_000L,
+        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, 10L, 100_000_000_000L, null,
                 LocalDate.of(2026, 9, 1), null, null);
 
         mockMvc.perform(post(BASE).with(asUser()).contentType(MediaType.APPLICATION_JSON).content(json(invalid)))
@@ -206,7 +207,7 @@ class ExpenseControllerTest {
 
     @Test
     void create_whenTypeMissing_returns400() throws Exception {
-        ExpenseRequest invalid = new ExpenseRequest(null, 10L, 1_000L, LocalDate.of(2026, 9, 1), null, null);
+        ExpenseRequest invalid = new ExpenseRequest(null, 10L, 1_000L, null, LocalDate.of(2026, 9, 1), null, null);
 
         mockMvc.perform(post(BASE).with(asUser()).contentType(MediaType.APPLICATION_JSON).content(json(invalid)))
                 .andExpect(status().isBadRequest())
@@ -215,7 +216,7 @@ class ExpenseControllerTest {
 
     @Test
     void create_whenCategoryIdMissing_returns400() throws Exception {
-        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, null, 1_000L, LocalDate.of(2026, 9, 1), null, null);
+        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, null, 1_000L, null, LocalDate.of(2026, 9, 1), null, null);
 
         mockMvc.perform(post(BASE).with(asUser()).contentType(MediaType.APPLICATION_JSON).content(json(invalid)))
                 .andExpect(status().isBadRequest())
@@ -224,7 +225,7 @@ class ExpenseControllerTest {
 
     @Test
     void create_whenTransactionDateMissing_returns400() throws Exception {
-        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, 10L, 1_000L, null, null, null);
+        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, 10L, 1_000L, null, null, null, null);
 
         mockMvc.perform(post(BASE).with(asUser()).contentType(MediaType.APPLICATION_JSON).content(json(invalid)))
                 .andExpect(status().isBadRequest())
@@ -233,7 +234,7 @@ class ExpenseControllerTest {
 
     @Test
     void create_whenDescriptionTooLong_returns400() throws Exception {
-        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, 10L, 1_000L,
+        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, 10L, 1_000L, null,
                 LocalDate.of(2026, 9, 1), "가".repeat(201), null);
 
         mockMvc.perform(post(BASE).with(asUser()).contentType(MediaType.APPLICATION_JSON).content(json(invalid)))
@@ -243,7 +244,7 @@ class ExpenseControllerTest {
 
     @Test
     void create_whenMemoTooLong_returns400() throws Exception {
-        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, 10L, 1_000L,
+        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, 10L, 1_000L, null,
                 LocalDate.of(2026, 9, 1), null, "가".repeat(10_001));
 
         mockMvc.perform(post(BASE).with(asUser()).contentType(MediaType.APPLICATION_JSON).content(json(invalid)))
@@ -336,7 +337,7 @@ class ExpenseControllerTest {
 
     @Test
     void update_whenAmountNegative_returns400() throws Exception {
-        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, 10L, -5L, LocalDate.of(2026, 9, 1), null, null);
+        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.EXPENSE, 10L, -5L, null, LocalDate.of(2026, 9, 1), null, null);
 
         mockMvc.perform(put(BASE + "/{id}", 100L).with(asUser()).contentType(MediaType.APPLICATION_JSON).content(json(invalid)))
                 .andExpect(status().isBadRequest());
@@ -508,5 +509,90 @@ class ExpenseControllerTest {
         mockMvc.perform(get(BASE + "/summary/daily").param("from", "2025-01-01").param("to", "2026-09-30").with(asUser()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("일별 요약은 최대 366일까지 조회할 수 있습니다."));
+    }
+
+    // ---- paymentMethod ----
+
+    @Test
+    void create_whenIncomeWithPaymentMethod_returns400() throws Exception {
+        String body = "{\"type\":\"INCOME\",\"categoryId\":11,\"amount\":3000000,"
+                + "\"paymentMethod\":\"BANK_TRANSFER\",\"transactionDate\":\"2026-09-25\"}";
+
+        mockMvc.perform(post(BASE).with(asUser()).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("수입 내역에는 결제수단을 지정할 수 없습니다."));
+        verifyNoInteractions(expenseService);
+    }
+
+    @Test
+    void update_whenTypeChangedToIncomeWithPaymentMethod_returns400() throws Exception {
+        ExpenseRequest invalid = new ExpenseRequest(ExpenseType.INCOME, 11L, 3_000_000L, PaymentMethod.CASH,
+                LocalDate.of(2026, 9, 25), null, null);
+
+        mockMvc.perform(put(BASE + "/{id}", 100L).with(asUser()).contentType(MediaType.APPLICATION_JSON).content(json(invalid)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("수입 내역에는 결제수단을 지정할 수 없습니다."));
+        verifyNoInteractions(expenseService);
+    }
+
+    @Test
+    void create_whenUnknownPaymentMethod_returns400() throws Exception {
+        String body = "{\"type\":\"EXPENSE\",\"categoryId\":10,\"amount\":1000,"
+                + "\"paymentMethod\":\"BITCOIN\",\"transactionDate\":\"2026-09-01\"}";
+
+        mockMvc.perform(post(BASE).with(asUser()).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("요청 본문 형식이 올바르지 않습니다."));
+        verifyNoInteractions(expenseService);
+    }
+
+    @Test
+    void create_withoutPaymentMethod_returns201WithNull() throws Exception {
+        when(expenseService.create(eq(USER_ID), any())).thenReturn(sampleResponse());
+        String body = "{\"type\":\"EXPENSE\",\"categoryId\":10,\"amount\":12000,\"transactionDate\":\"2026-09-01\"}";
+
+        mockMvc.perform(post(BASE).with(asUser()).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.paymentMethod").value(org.hamcrest.Matchers.nullValue()));
+        verify(expenseService).create(eq(USER_ID),
+                org.mockito.ArgumentMatchers.argThat(r -> r.paymentMethod() == null));
+    }
+
+    @Test
+    void create_withPaymentMethod_passesItToService() throws Exception {
+        when(expenseService.create(eq(USER_ID), any())).thenReturn(sampleResponse());
+        String body = "{\"type\":\"EXPENSE\",\"categoryId\":10,\"amount\":12000,"
+                + "\"paymentMethod\":\"CREDIT_CARD\",\"transactionDate\":\"2026-09-01\"}";
+
+        mockMvc.perform(post(BASE).with(asUser()).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isCreated());
+        verify(expenseService).create(eq(USER_ID),
+                org.mockito.ArgumentMatchers.argThat(r -> r.paymentMethod() == PaymentMethod.CREDIT_CARD));
+    }
+
+    @Test
+    void get_returnsPaymentMethod() throws Exception {
+        ExpenseResponse response = new ExpenseResponse(100L, ExpenseType.EXPENSE, 10L, "식비", 12_000L,
+                PaymentMethod.DEBIT_CARD, LocalDate.of(2026, 9, 1), "점심", "메모",
+                LocalDateTime.of(2026, 9, 1, 12, 0), LocalDateTime.of(2026, 9, 1, 12, 0));
+        when(expenseService.get(USER_ID, 100L)).thenReturn(response);
+
+        mockMvc.perform(get(BASE + "/{id}", 100L).with(asUser()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.paymentMethod").value("DEBIT_CARD"))
+                .andExpect(jsonPath("$.data.paymentMethodAllowedForType").doesNotExist());
+    }
+
+    @Test
+    void list_returnsPaymentMethodInSummary() throws Exception {
+        ExpenseSummary summary = new ExpenseSummary(100L, ExpenseType.EXPENSE, 10L, "식비",
+                12_000L, PaymentMethod.EASY_PAY, LocalDate.of(2026, 9, 1), "점심");
+        when(expenseService.list(eq(USER_ID), isNull(), isNull(), isNull(), isNull(), eq(PageRequest.of(0, 20))))
+                .thenReturn(new PageImpl<>(List.of(summary), PageRequest.of(0, 20), 1));
+
+        mockMvc.perform(get(BASE).with(asUser()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].paymentMethod").value("EASY_PAY"));
     }
 }
