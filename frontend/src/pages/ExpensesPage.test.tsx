@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import dayjs from 'dayjs'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -1097,6 +1097,165 @@ describe('ExpensesPage', () => {
       await user.click(screen.getByRole('button', { name: '삭제' }))
 
       expect(await screen.findByText('접근 권한이 없습니다.')).toBeInTheDocument()
+    })
+  })
+
+  describe('작은 화면(카드 목록)', () => {
+    // 데스크톱 쿼리(min-width: 768px) 일치 여부 — change 로 화면 폭 전환을 흉내 낸다
+    let desktopMatches: boolean
+    let changeListeners: Set<() => void>
+
+    const setViewport = (desktop: boolean) => {
+      desktopMatches = desktop
+      act(() => changeListeners.forEach((cb) => cb()))
+    }
+
+    beforeEach(() => {
+      desktopMatches = false
+      changeListeners = new Set()
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn((query: string) => ({
+          get matches() {
+            return desktopMatches
+          },
+          media: query,
+          addEventListener: (_type: string, cb: () => void) => changeListeners.add(cb),
+          removeEventListener: (_type: string, cb: () => void) => changeListeners.delete(cb),
+        })),
+      )
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    const lunchDate = dayjs(lunch.transactionDate).format('M/D')
+    const salaryDate = dayjs(salary.transactionDate).format('M/D')
+    const findCard = (category: string) =>
+      screen.findByRole('button', { name: new RegExp(`^\\d+/\\d+ ${category} .* 수정$`) })
+
+    it('render_onMobile_showsCardsWithSameInfoInsteadOfTable', async () => {
+      mockListResponse([lunch, salary])
+      renderPage()
+
+      const list = await screen.findByRole('list', { name: '가계부 내역 목록' })
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+      const [lunchCard, salaryCard] = within(list).getAllByRole('listitem')
+      expect(within(lunchCard).getByText('식비')).toBeInTheDocument()
+      expect(within(lunchCard).getByText('점심')).toBeInTheDocument()
+      expect(within(lunchCard).getByText(`${lunchDate} · 신용카드`)).toBeInTheDocument()
+      expect(within(lunchCard).getByText('-12,000원')).toHaveClass('text-red-500')
+      expect(within(salaryCard).getByText(salaryDate)).toBeInTheDocument()
+      expect(within(salaryCard).getByText('+3,000,000원')).toHaveClass('text-blue-600')
+      expect(
+        within(salaryCard).getByRole('button', { name: `${salaryDate} 월급 수입 +3,000,000원 수정` }),
+      ).toBeInTheDocument()
+    })
+
+    it('edit_whenCardTapped_fetchesDetailAndOpensEditModal', async () => {
+      const user = userEvent.setup()
+      mockListResponse([lunch])
+      mockedGetExpense.mockResolvedValue(detailOf(lunch))
+      renderPage()
+
+      await user.click(await findCard('식비'))
+
+      expect(mockedGetExpense).toHaveBeenCalledWith(10)
+      const dialog = await screen.findByRole('dialog', { name: '내역 수정' })
+      expect(within(dialog).getByPlaceholderText('금액 (원)')).toHaveValue('12000')
+    })
+
+    it.each([['{Enter}'], [' ']])('edit_whenCardFocusedAndKeyPressed_opensEditModal (%s)', async (key) => {
+      const user = userEvent.setup()
+      mockListResponse([lunch])
+      mockedGetExpense.mockResolvedValue(detailOf(lunch))
+      renderPage()
+
+      const card = await findCard('식비')
+      card.focus()
+      await user.keyboard(key)
+
+      expect(await screen.findByRole('dialog', { name: '내역 수정' })).toBeInTheDocument()
+      expect(mockedGetExpense).toHaveBeenCalledTimes(1)
+    })
+
+    it('form_whenEscapePressedAfterCardTap_restoresFocusToCard', async () => {
+      const user = userEvent.setup()
+      mockListResponse([lunch])
+      mockedGetExpense.mockResolvedValue(detailOf(lunch))
+      renderPage()
+      const card = await findCard('식비')
+
+      await user.click(card)
+      await screen.findByRole('dialog', { name: '내역 수정' })
+      await user.keyboard('{Escape}')
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(card).toHaveFocus()
+    })
+
+    it('delete_whenCardDeleteTappedAndConfirmed_deletesWithoutOpeningEdit', async () => {
+      const user = userEvent.setup()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      mockListResponse([lunch])
+      mockedDeleteExpense.mockResolvedValue({} as never)
+      renderPage()
+      await findCard('식비')
+      const listCalls = mockedGetExpenses.mock.calls.length
+
+      await user.click(screen.getByRole('button', { name: `${lunchDate} 식비 점심 삭제` }))
+
+      await waitFor(() => expect(mockedDeleteExpense).toHaveBeenCalledWith(10))
+      await waitFor(() => expect(mockedGetExpenses.mock.calls.length).toBeGreaterThan(listCalls))
+      expect(mockedGetExpense).not.toHaveBeenCalled()
+    })
+
+    it('resize_mobileToDesktopAndBack_swapsCardsAndTableWithoutRefetch', async () => {
+      mockListResponse([lunch])
+      renderPage()
+      await screen.findByRole('list', { name: '가계부 내역 목록' })
+
+      setViewport(true)
+      expect(within(screen.getByRole('table')).getByText('점심')).toBeInTheDocument()
+      expect(screen.queryByRole('list', { name: '가계부 내역 목록' })).not.toBeInTheDocument()
+
+      setViewport(false)
+      expect(screen.getByRole('list', { name: '가계부 내역 목록' })).toBeInTheDocument()
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+      expect(mockedGetExpenses).toHaveBeenCalledTimes(1)
+    })
+
+    it('changePage_onMobile_usesTouchSizedButtonsAndRequestsNextPage', async () => {
+      const user = userEvent.setup()
+      mockListResponse([lunch], { page: 0, size: 20, total: 40, totalPages: 2 })
+      renderPage()
+      await findCard('식비')
+
+      const next = screen.getByRole('button', { name: '다음' })
+      expect(next).toHaveClass('min-h-11')
+      await user.click(next)
+
+      await waitFor(() => {
+        expect(mockedGetExpenses).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1 }))
+      })
+      expect(await screen.findByText('2 / 2')).toBeInTheDocument()
+    })
+
+    it('render_onMobileWhenEmpty_showsEmptyMessage', async () => {
+      mockListResponse([])
+      renderPage()
+
+      expect(await screen.findByText('내역이 없습니다')).toBeInTheDocument()
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    })
+
+    it('render_onMobileWhenListFails_showsErrorWithoutEmptyMessage', async () => {
+      mockedGetExpenses.mockRejectedValue(new Error('network error'))
+      renderPage()
+
+      expect(await screen.findByText('가계부 내역을 불러오지 못했습니다.')).toBeInTheDocument()
+      expect(screen.queryByText('내역이 없습니다')).not.toBeInTheDocument()
     })
   })
 })

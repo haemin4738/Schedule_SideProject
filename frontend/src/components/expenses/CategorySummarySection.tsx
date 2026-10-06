@@ -15,11 +15,11 @@ export default function CategorySummarySection({ byCategory }: Props) {
             const ratio = byCategory.total > 0 ? (c.amount / byCategory.total) * 100 : 0
             return (
               <li key={c.categoryId} className="text-sm">
-                <div className="mb-1 flex justify-between">
-                  <span>
+                <div className="mb-1 flex justify-between gap-3">
+                  <span className="min-w-0 break-words">
                     {c.categoryName} <span className="text-gray-400">({c.count}건)</span>
                   </span>
-                  <span>
+                  <span className="shrink-0 whitespace-nowrap">
                     {formatAmount(c.amount)}{' '}
                     {/* Flutter 화면과 동일하게 정수 % 로 표기 */}
                     <span className="text-gray-400">{Math.round(ratio)}%</span>
