@@ -1,6 +1,6 @@
 import type { ExpenseSummary, PageMeta } from '@/api/expenses'
 import { formatSignedAmount } from '@/constants/expenseType'
-import { PAYMENT_METHOD_LABELS } from '@/constants/paymentMethod'
+import { paymentMethodLabel } from '@/constants/paymentMethod'
 import dayjs from 'dayjs'
 
 interface Props {
@@ -57,7 +57,7 @@ export default function ExpenseListTable({
                   {item.categoryName}
                   {item.paymentMethod && (
                     <span className="block text-xs text-gray-400">
-                      {PAYMENT_METHOD_LABELS[item.paymentMethod]}
+                      {paymentMethodLabel(item.paymentMethod)}
                     </span>
                   )}
                 </td>

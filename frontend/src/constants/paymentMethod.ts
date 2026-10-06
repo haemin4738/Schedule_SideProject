@@ -11,3 +11,8 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
 }
 
 export const PAYMENT_METHOD_OPTIONS = Object.entries(PAYMENT_METHOD_LABELS) as [PaymentMethod, string][]
+
+// 서버에 새 값이 먼저 추가돼 이 목록에 없으면 값 자체를 보여 준다(빈 칸으로 사라지지 않게).
+export function paymentMethodLabel(value: string): string {
+  return PAYMENT_METHOD_LABELS[value as PaymentMethod] ?? value
+}

@@ -12,7 +12,7 @@ import {
   MIN_AMOUNT,
   type ExpenseType,
 } from '@/constants/expenseType'
-import { PAYMENT_METHOD_OPTIONS, type PaymentMethod } from '@/constants/paymentMethod'
+import { PAYMENT_METHOD_LABELS, PAYMENT_METHOD_OPTIONS, type PaymentMethod } from '@/constants/paymentMethod'
 import { useState, type ReactNode } from 'react'
 import { useDialog } from './useDialog'
 import { useForm, useWatch } from 'react-hook-form'
@@ -240,6 +240,10 @@ export default function ExpenseFormModal({
             <div>
               <select aria-label="결제수단" {...register('paymentMethod')} className={inputClass}>
                 <option value="">결제수단 선택 안 함</option>
+                {/* 웹이 모르는 기존 값이면 빈 선택처럼 보이지 않게 그대로 선택지로 보여 준다 */}
+                {expense?.paymentMethod && !(expense.paymentMethod in PAYMENT_METHOD_LABELS) && (
+                  <option value={expense.paymentMethod}>{expense.paymentMethod}</option>
+                )}
                 {PAYMENT_METHOD_OPTIONS.map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}

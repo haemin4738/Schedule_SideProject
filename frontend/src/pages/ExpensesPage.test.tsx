@@ -962,6 +962,51 @@ describe('ExpensesPage', () => {
       })
     })
 
+    it('edit_whenChangedToIncome_sendsNullPaymentMethod', async () => {
+      const user = userEvent.setup()
+      mockListResponse([lunch])
+      mockedGetExpense.mockResolvedValue(detailOf(lunch))
+      mockedUpdateExpense.mockResolvedValue({ data: { success: true, data: {} } } as never)
+      renderPage()
+
+      await user.click(await screen.findByText('점심'))
+      const dialog = await screen.findByRole('dialog', { name: '내역 수정' })
+      await user.click(within(dialog).getByRole('button', { name: '수입' }))
+      await user.selectOptions(within(dialog).getByLabelText('카테고리'), '2')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() => {
+        expect(mockedUpdateExpense).toHaveBeenCalledWith(
+          10,
+          expect.objectContaining({ type: 'INCOME', paymentMethod: null }),
+        )
+      })
+    })
+
+    it('edit_withUnknownPaymentMethod_showsItAndPreservesOnSave', async () => {
+      const user = userEvent.setup()
+      const unknown = { ...lunch, paymentMethod: 'POINT' } as unknown as ExpenseSummary
+      mockListResponse([unknown])
+      mockedGetExpense.mockResolvedValue(detailOf(unknown))
+      mockedUpdateExpense.mockResolvedValue({ data: { success: true, data: {} } } as never)
+      renderPage()
+
+      const row = (await screen.findByText('점심')).closest('tr') as HTMLElement
+      expect(within(row).getByText('POINT')).toBeInTheDocument()
+
+      await user.click(within(row).getByText('점심'))
+      const dialog = await screen.findByRole('dialog', { name: '내역 수정' })
+      expect(within(dialog).getByLabelText('결제수단')).toHaveValue('POINT')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() => {
+        expect(mockedUpdateExpense).toHaveBeenCalledWith(
+          10,
+          expect.objectContaining({ paymentMethod: 'POINT' }),
+        )
+      })
+    })
+
     it('render_withPaymentMethod_showsLabelUnderCategory', async () => {
       mockListResponse([lunch, salary])
       renderPage()
