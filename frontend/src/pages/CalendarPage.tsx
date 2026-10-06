@@ -13,6 +13,7 @@ import CalendarSidebar from '@/components/calendar/CalendarSidebar'
 import EntryTypeTabs, { type EntryKind } from '@/components/calendar/EntryTypeTabs'
 import { CalendarOverlayContext, type CalendarOverlayValue } from '@/components/calendar/calendarOverlayContext'
 import useCalendarOverlays from '@/components/calendar/useCalendarOverlays'
+import useCalendarMoneySummary from '@/components/calendar/useCalendarMoneySummary'
 import EventFormModal from '@/components/calendar/EventFormModal'
 import {
   CalendarToolbar,
@@ -118,6 +119,8 @@ export default function CalendarPage() {
   const [overlayReload, setOverlayReload] = useState(0)
   const [categories, setCategories] = useState<CategoriesState>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // 사이드바 가계부 요약에서 보여줄 날 (yyyy-MM-dd). null 이면 기본값(오늘 등) — 화면을 옮기면 기본값으로 돌아간다
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
 
   // 서랍이 열린 채 화면이 넓어지면(창 크기 조절·태블릿 회전) 보이지 않는 서랍이 키보드를 가두지 않게 닫는다
   useEffect(() => {
@@ -134,6 +137,7 @@ export default function CalendarPage() {
 
   const range = useMemo(() => visibleRange(date, view), [date, view])
   const overlays = useCalendarOverlays(range, layers, overlayReload)
+  const moneySummary = useCalendarMoneySummary(date, range, overlays, selectedDay, overlayReload)
 
   const notices = [
     ...(truncated && layers.events ? [`일정이 너무 많아 앞의 ${MAX_EVENTS_IN_RANGE.toLocaleString('ko-KR')}개만 표시합니다.`] : []),
@@ -251,6 +255,7 @@ export default function CalendarPage() {
   }, [needsCategories, categories])
 
   const onSelectSlot = (slot: SlotInfo) => {
+    setSelectedDay(dayjs(slot.start).format('YYYY-MM-DD'))
     if (view === 'month') {
       // 월간 보기에서 고른 날짜(들)는 종일 일정으로 만든다. slot.end 는 다음 날 00:00(배타)이다
       openCreate(slot.start, dayjs(slot.end).subtract(1, 'millisecond').toDate(), true)
@@ -330,7 +335,13 @@ export default function CalendarPage() {
     ) : undefined
 
   const sidebar = (onNavigate?: () => void) => (
-    <CalendarSidebar layers={layers} onToggleLayer={toggleLayer} onCreate={onCreateClick} onNavigate={onNavigate} />
+    <CalendarSidebar
+      layers={layers}
+      onToggleLayer={toggleLayer}
+      onCreate={onCreateClick}
+      moneySummary={layers.expenses ? moneySummary : undefined}
+      onNavigate={onNavigate}
+    />
   )
 
   return (
@@ -376,7 +387,10 @@ export default function CalendarPage() {
                 date={date}
                 view={view}
                 views={VIEWS}
-                onNavigate={setDate}
+                onNavigate={(next) => {
+                  setDate(next)
+                  setSelectedDay(null)
+                }}
                 onView={setView}
                 messages={messages}
                 formats={formats}
