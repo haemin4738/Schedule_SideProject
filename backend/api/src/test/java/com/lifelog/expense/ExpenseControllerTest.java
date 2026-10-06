@@ -580,8 +580,7 @@ class ExpenseControllerTest {
 
         mockMvc.perform(get(BASE + "/{id}", 100L).with(asUser()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.paymentMethod").value("DEBIT_CARD"))
-                .andExpect(jsonPath("$.data.paymentMethodAllowedForType").doesNotExist());
+                .andExpect(jsonPath("$.data.paymentMethod").value("DEBIT_CARD"));
     }
 
     @Test

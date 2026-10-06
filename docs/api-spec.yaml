@@ -1744,7 +1744,7 @@ components:
 
     PaymentMethod:
       type: string
-      description: 결제수단. 값 추가만 허용(이름 변경·삭제 금지). 알 수 없는 값은 400
+      description: 결제수단. 값 추가만 허용(이름 변경·삭제 금지). 알 수 없는 값은 400. 요청·응답 필드는 OpenAPI 3.0 nullable 규칙상 이 스키마를 참조하지 않고 같은 값을 인라인(+ null)으로 둔다 — 값 추가 시 함께 수정
       enum: [CREDIT_CARD, DEBIT_CARD, CASH, BANK_TRANSFER, EASY_PAY, OTHER]
 
     ExpenseCategoryCreateRequest:
@@ -1797,9 +1797,9 @@ components:
           description: 원(KRW) 단위 정수
           example: 12000
         paymentMethod:
-          allOf:
-            - $ref: '#/components/schemas/PaymentMethod'
+          type: string
           nullable: true
+          enum: [CREDIT_CARD, DEBIT_CARD, CASH, BANK_TRANSFER, EASY_PAY, OTHER, null]
           description: 선택. type 이 EXPENSE 일 때만 지정 가능 — INCOME 이면 null 이어야 하며 아니면 400. PUT 은 전체 교체라 생략하면 null 로 저장됨
           example: CREDIT_CARD
         transactionDate:
@@ -1826,9 +1826,9 @@ components:
         categoryName: { type: string, example: 식비 }
         amount: { type: integer, format: int64, example: 12000 }
         paymentMethod:
-          allOf:
-            - $ref: '#/components/schemas/PaymentMethod'
+          type: string
           nullable: true
+          enum: [CREDIT_CARD, DEBIT_CARD, CASH, BANK_TRANSFER, EASY_PAY, OTHER, null]
           description: 미지정·수입이면 null
         transactionDate: { type: string, format: date }
         description: { type: string, nullable: true }
@@ -1847,9 +1847,9 @@ components:
         categoryName: { type: string }
         amount: { type: integer, format: int64 }
         paymentMethod:
-          allOf:
-            - $ref: '#/components/schemas/PaymentMethod'
+          type: string
           nullable: true
+          enum: [CREDIT_CARD, DEBIT_CARD, CASH, BANK_TRANSFER, EASY_PAY, OTHER, null]
           description: 미지정·수입이면 null
         transactionDate: { type: string, format: date }
         description: { type: string, nullable: true }
