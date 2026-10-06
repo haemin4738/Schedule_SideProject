@@ -621,8 +621,39 @@ describe('CalendarPage', () => {
       fireEvent.mouseUp(cell, point)
     }
 
-    it('onSelectSlot_clickMonthCell_showsSelectedDayTotals', async () => {
-      const user = userEvent.setup()
+    /** 월간 보기 격자에서 (주, 요일) 칸의 배경 요소 */
+    const monthCell = (weekIndex: number, dayIndex: number) =>
+      document.querySelectorAll('.rbc-month-view .rbc-row-bg')[weekIndex].querySelectorAll('.rbc-day-bg')[dayIndex]
+
+    /** 같은 주 행에서 fromDay 칸부터 toDay 칸까지 마우스로 끌어 고른다 (layout 흉내는 clickMonthCell 과 같다) */
+    const dragMonthCells = (weekIndex: number, fromDay: number, toDay: number) => {
+      const rows = Array.from(document.querySelectorAll<HTMLElement>('.rbc-month-view .rbc-row-bg'))
+      rows.forEach((row, i) => {
+        row.getBoundingClientRect = () => ({ top: i * 100, left: 0, bottom: i * 100 + 100, right: 700 }) as DOMRect
+        Object.defineProperty(row, 'offsetWidth', { configurable: true, value: 700 })
+        Object.defineProperty(row, 'offsetHeight', { configurable: true, value: 100 })
+      })
+      const cells = rows[weekIndex].querySelectorAll<HTMLElement>('.rbc-day-bg')
+      const point = (day: number) => ({ clientX: day * 100 + 50, clientY: weekIndex * 100 + 50, button: 0 })
+      document.elementFromPoint = () => cells[fromDay]
+      act(() => {
+        fireEvent.mouseDown(cells[fromDay], point(fromDay))
+      })
+      document.elementFromPoint = () => cells[toDay]
+      // rbc 는 첫 이동 지점을 드래그 시작점으로 삼으므로 시작 칸 안에서 조금 움직인 뒤 목표 칸으로 옮긴다.
+      // 끄는 동안의 선택 범위(state)가 반영된 뒤에 놓아야 하므로 act 를 나눈다
+      act(() => {
+        fireEvent.mouseMove(cells[fromDay], { ...point(fromDay), clientX: fromDay * 100 + 60 })
+      })
+      act(() => {
+        fireEvent.mouseMove(cells[toDay], point(toDay))
+      })
+      act(() => {
+        fireEvent.mouseUp(cells[toDay], point(toDay))
+      })
+    }
+
+    it('onSelectSlot_firstClickOnOtherDay_selectsDayWithoutOpeningModal', async () => {
       mockedDaily.mockResolvedValue(
         dailyRes([
           { date: '2026-09-16', income: 7000, expense: 2000, net: 5000 },
@@ -631,14 +662,126 @@ describe('CalendarPage', () => {
       )
       renderPage()
       await waitFor(() => expect(totals('9월 30일 (수)')).toHaveTextContent('합계-3,000원'))
+      // 기본 선택일(오늘)이 강조되어 있다
+      expect(monthCell(4, 3)).toHaveClass('lifelog-selected-day')
 
       // 9월 격자 3번째 주(9/13~9/19)의 수요일 = 9/16
       act(() => clickMonthCell(2, 3))
 
-      // 칸을 누르면 일정 만들기 창도 열린다 — 닫고 사이드바를 본다
-      await user.click(await screen.findByRole('button', { name: '취소' }))
-      expect(totals('9월 16일 (수)')).toHaveTextContent('수입7,000원지출2,000원합계5,000원')
+      await waitFor(() => expect(totals('9월 16일 (수)')).toHaveTextContent('수입7,000원지출2,000원합계5,000원'))
       expect(within(panel()).queryByRole('heading', { name: '9월 30일 (수)' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(monthCell(2, 3)).toHaveClass('lifelog-selected-day')
+      expect(monthCell(4, 3)).not.toHaveClass('lifelog-selected-day')
+      expect(document.querySelectorAll('.lifelog-selected-day')).toHaveLength(1)
+    })
+
+    it('onSelectSlot_secondClickOnSelectedDay_opensModalWithThatDate', async () => {
+      renderPage()
+      await waitFor(() => expect(mockedDaily).toHaveBeenCalledTimes(1))
+      act(() => clickMonthCell(2, 3))
+      await waitFor(() => expect(within(panel()).getByRole('heading', { name: '9월 16일 (수)' })).toBeInTheDocument())
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      act(() => clickMonthCell(2, 3))
+
+      const dialog = await screen.findByRole('dialog', { name: '새 일정' })
+      expect(within(dialog).getByLabelText('시작', { exact: true })).toHaveValue('2026-09-16')
+      expect(within(dialog).getByLabelText('종일')).toBeChecked()
+      // 연달아 누른 두 번째 클릭(doubleClick 으로 올 수도 있다)에도 창은 하나만 열린다
+      expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    })
+
+    it('onSelectSlot_firstClickOnToday_opensModalImmediately', async () => {
+      renderPage()
+      await waitFor(() => expect(mockedDaily).toHaveBeenCalledTimes(1))
+
+      // 오늘(9/30)은 기본 선택일이라 첫 클릭에 바로 열린다
+      act(() => clickMonthCell(4, 3))
+
+      const dialog = await screen.findByRole('dialog', { name: '새 일정' })
+      expect(within(dialog).getByLabelText('시작', { exact: true })).toHaveValue('2026-09-30')
+    })
+
+    it('onSelectSlot_clickWhileModalOpen_keepsSingleModal', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await waitFor(() => expect(mockedDaily).toHaveBeenCalledTimes(1))
+      act(() => clickMonthCell(4, 3))
+      await screen.findByRole('dialog', { name: '새 일정' })
+
+      // 오늘 칸 더블클릭의 두 번째 알림처럼 창이 열린 뒤 다시 칸 선택이 와도 무시한다
+      act(() => clickMonthCell(2, 3))
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(screen.getAllByRole('dialog')).toHaveLength(1)
+      expect(within(panel()).getByRole('heading', { name: '9월 30일 (수)' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: '취소' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('onSelectSlot_dragAcrossDays_opensModalAndSelectsStartDay', async () => {
+      renderPage()
+      await waitFor(() => expect(mockedDaily).toHaveBeenCalledTimes(1))
+
+      // 9/14(월) ~ 9/16(수) 를 끌어 고른다 — 선택일과 달라도 바로 창이 열린다
+      dragMonthCells(2, 1, 3)
+
+      const dialog = await screen.findByRole('dialog', { name: '새 일정' })
+      expect(within(dialog).getByLabelText('시작', { exact: true })).toHaveValue('2026-09-14')
+      expect(within(dialog).getByLabelText('종료', { exact: true })).toHaveValue('2026-09-16')
+      expect(within(panel()).getByRole('heading', { name: '9월 14일 (월)' })).toBeInTheDocument()
+    })
+
+    it('onCreateClick_afterSelectingDay_fillsSelectedDateWithNextHour', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await waitFor(() => expect(mockedDaily).toHaveBeenCalledTimes(1))
+      act(() => clickMonthCell(2, 3))
+      await waitFor(() => expect(within(panel()).getByRole('heading', { name: '9월 16일 (수)' })).toBeInTheDocument())
+
+      await user.click(screen.getByRole('button', { name: /만들기/ }))
+
+      const dialog = screen.getByRole('dialog', { name: '새 일정' })
+      expect(within(dialog).getByLabelText('시작', { exact: true })).toHaveValue('2026-09-16')
+      // 시간은 기존 규칙(지금 10:00 의 다음 정시부터 1시간)
+      expect(within(dialog).getByLabelText('시작 시간')).toHaveValue('11:00')
+      expect(within(dialog).getByLabelText('종료 시간')).toHaveValue('12:00')
+    })
+
+    it('onSelectSlot_expensesLayerOff_keepsSelectThenOpenRule', async () => {
+      localStorage.setItem(LAYERS_STORAGE_KEY, JSON.stringify({ expenses: false }))
+      renderPage()
+      await waitFor(() => expect(mockedSpecialDays).toHaveBeenCalled())
+
+      act(() => clickMonthCell(2, 3))
+      await waitFor(() => expect(monthCell(2, 3)).toHaveClass('lifelog-selected-day'))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      act(() => clickMonthCell(2, 3))
+      expect(await screen.findByRole('dialog', { name: '새 일정' })).toBeInTheDocument()
+    })
+
+    it('dayPropGetter_weekView_highlightsSelectedDayColumnAndHeader', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await switchView(user, '주')
+
+      // 오늘(9/30 수) 열과 머리글이 강조된다
+      const highlighted = Array.from(document.querySelectorAll('.lifelog-selected-day'))
+      expect(highlighted.some((el) => el.classList.contains('rbc-day-slot'))).toBe(true)
+      expect(highlighted.some((el) => el.classList.contains('rbc-header'))).toBe(true)
+      expect(document.querySelectorAll('.rbc-day-slot.lifelog-selected-day')).toHaveLength(1)
+    })
+
+    it('dayPropGetter_dayView_doesNotHighlight', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await switchView(user, '일')
+
+      expect(document.querySelector('.lifelog-selected-day')).toBeNull()
     })
 
     it('onNavigate_afterSelectingDay_resetsToDefaultDay', async () => {
@@ -646,8 +789,7 @@ describe('CalendarPage', () => {
       renderPage()
       await waitFor(() => expect(mockedDaily).toHaveBeenCalledTimes(1))
       act(() => clickMonthCell(2, 3))
-      await user.click(await screen.findByRole('button', { name: '취소' }))
-      expect(within(panel()).getByRole('heading', { name: '9월 16일 (수)' })).toBeInTheDocument()
+      await waitFor(() => expect(within(panel()).getByRole('heading', { name: '9월 16일 (수)' })).toBeInTheDocument())
 
       await user.click(screen.getByRole('button', { name: '다음' }))
       expect(within(panel()).getByRole('heading', { name: '10월 1일 (목)' })).toBeInTheDocument()
@@ -655,6 +797,12 @@ describe('CalendarPage', () => {
       await user.click(screen.getByRole('button', { name: '이전' }))
       // 다시 9월로 와도 고른 날(9/16)이 아니라 기본값(오늘)
       expect(within(panel()).getByRole('heading', { name: '9월 30일 (수)' })).toBeInTheDocument()
+      expect(monthCell(4, 3)).toHaveClass('lifelog-selected-day')
+      expect(monthCell(2, 3)).not.toHaveClass('lifelog-selected-day')
+      // 초기화된 선택일(오늘)이 아닌 9/16 을 다시 누르면 선택만 된다
+      act(() => clickMonthCell(2, 3))
+      await waitFor(() => expect(within(panel()).getByRole('heading', { name: '9월 16일 (수)' })).toBeInTheDocument())
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
     it('onNavigate_prevMonth_defaultsToFirstDayOfThatMonth', async () => {

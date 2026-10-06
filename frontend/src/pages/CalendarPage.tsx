@@ -74,6 +74,20 @@ const formats: Formats = {
   agendaDateFormat: 'M월 D일 (ddd)',
 }
 
+/** 시간 칸 하나의 길이(분) — react-big-calendar 기본 step */
+const SLOT_MINUTES = 30
+const DAY_MINUTES = 24 * 60
+
+/**
+ * 드래그(action 'select')가 칸 하나 안에서 끝났는지.
+ * 월간 칸·종일 줄은 00:00 부터 하루 단위, 시간 칸은 SLOT_MINUTES 단위로 알려 온다
+ */
+const isSingleCell = (slot: SlotInfo) => {
+  const minutes = dayjs(slot.end).diff(slot.start, 'minute')
+  const dayCells = dayjs(slot.start).isSame(dayjs(slot.start).startOf('day')) && minutes % DAY_MINUTES === 0
+  return minutes <= (dayCells ? DAY_MINUTES : SLOT_MINUTES)
+}
+
 /** 새로 입력할 때는 입력 종류(일정·구직활동·가계부)를 탭으로 바꿀 수 있고, 고른 날짜는 그대로 쓴다 */
 type ModalState =
   | { mode: 'create'; kind: EntryKind; start: Date; end: Date; allDay: boolean; switched?: boolean }
@@ -254,8 +268,27 @@ export default function CalendarPage() {
     }
   }, [needsCategories, categories])
 
+  /**
+   * 날짜 칸 선택 — "한 번 누르면 선택, 같은 날을 한 번 더 누르면 입력 창" (구글 캘린더식).
+   * - 칸 하나를 누르면(click·doubleClick, 또는 칸 하나 안에서 끝난 드래그) 지금 선택된 날(moneySummary.day)과 비교한다.
+   *   다른 날이면 선택만 바꾸고, 같은 날이면 입력 창을 연다. 아무것도 고르지 않았을 때의 선택일은 기본값(오늘 등)이므로
+   *   오늘 칸은 첫 클릭에 바로 열린다 (의도된 동작).
+   *   더블클릭은 rbc 가 click → doubleClick 순으로 알리므로 결과적으로 "같은 날 두 번 클릭"이 되어 창이 열린다.
+   * - 여러 날·여러 시간 칸을 드래그한 범위는 의도가 분명하므로 바로 입력 창을 열고, 선택일은 시작일로 둔다.
+   * - 가계부 표시를 꺼 요약 패널이 없어도 규칙은 같다 (선택일은 패널과 무관하게 항상 계산된다)
+   */
   const onSelectSlot = (slot: SlotInfo) => {
-    setSelectedDay(dayjs(slot.start).format('YYYY-MM-DD'))
+    // 입력 창이 이미 열려 있으면(오늘 칸 더블클릭의 두 번째 알림 등) 다시 열지 않는다
+    if (modal) return
+    const day = dayjs(slot.start).format('YYYY-MM-DD')
+    if (slot.action !== 'select' || isSingleCell(slot)) {
+      if (day !== moneySummary.day) {
+        setSelectedDay(day)
+        return
+      }
+    } else {
+      setSelectedDay(day)
+    }
     if (view === 'month') {
       // 월간 보기에서 고른 날짜(들)는 종일 일정으로 만든다. slot.end 는 다음 날 00:00(배타)이다
       openCreate(slot.start, dayjs(slot.end).subtract(1, 'millisecond').toDate(), true)
@@ -309,10 +342,16 @@ export default function CalendarPage() {
     [onSelectEvent],
   )
 
+  // 만들기는 선택한 날짜로 채운다. 시간은 기존 규칙(지금의 다음 정시부터 1시간)을 그대로 쓰고 날짜만 바꾼다
   const onCreateClick = () => {
-    const start = dayjs().add(1, 'hour').startOf('hour')
+    const nextHour = dayjs().add(1, 'hour').startOf('hour')
+    const start = moneySummary.day === dayjs().format('YYYY-MM-DD') ? nextHour : dayjs(moneySummary.day).hour(nextHour.hour())
     openCreate(start.toDate(), start.add(1, 'hour').toDate(), false)
   }
+
+  // 선택한 날 칸을 은은하게 강조한다 (오늘은 날짜 원으로 따로 표시). 일 보기는 화면 전체가 그 날이라 강조하지 않는다
+  const dayPropGetter = (day: Date) =>
+    view !== 'day' && dayjs(day).format('YYYY-MM-DD') === moneySummary.day ? { className: 'lifelog-selected-day' } : {}
 
   const closeModal = () => {
     setModal(null)
@@ -407,6 +446,7 @@ export default function CalendarPage() {
                   }
                 }}
                 scrollToTime={dayjs().hour(8).minute(0).toDate()}
+                dayPropGetter={dayPropGetter}
                 eventPropGetter={(event) => ({
                   style: { backgroundColor: event.color, color: readableTextColor(event.color) },
                 })}
