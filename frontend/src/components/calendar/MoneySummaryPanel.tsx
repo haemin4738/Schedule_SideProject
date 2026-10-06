@@ -1,5 +1,6 @@
 import { formatAmount } from '@/constants/expenseType'
 import dayjs from 'dayjs'
+import 'dayjs/locale/ko'
 import { useId } from 'react'
 import { Link } from 'react-router-dom'
 import type { CalendarMoneySummary, MoneyStatus, MoneyTotals } from './useCalendarMoneySummary'
@@ -55,7 +56,7 @@ export default function MoneySummaryPanel({ summary, onNavigate }: Props) {
       <div className="flex flex-col gap-3 rounded-lg bg-gray-50 px-3 py-2">
         <TotalsList title={`${month.format('M월')} 전체`} totals={summary.monthTotals} status={summary.monthStatus} />
         <TotalsList
-          title={dayjs(summary.day).format('M월 D일 (ddd)')}
+          title={dayjs(summary.day).locale('ko').format('M월 D일 (ddd)')}
           totals={summary.dayTotals}
           status={summary.dayStatus}
         />

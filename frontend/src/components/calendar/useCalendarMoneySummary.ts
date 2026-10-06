@@ -14,7 +14,7 @@ export interface MoneyTotals {
 export type MoneyStatus = 'loading' | 'ready' | 'error'
 
 export interface CalendarMoneySummary {
-  /** yyyy-MM — 캘린더가 보고 있는 달 (주·일 보기는 그 날짜가 속한 달) */
+  /** yyyy-MM — 선택한 날이 속한 달 (기본 선택일은 캘린더가 보고 있는 달 안이라, 고르지 않았으면 보고 있는 달) */
   month: string
   monthTotals: MoneyTotals | null
   monthStatus: MoneyStatus
@@ -48,8 +48,8 @@ export const defaultSelectedDay = (anchor: Date, range: { from: Date; to: Date }
 /**
  * 사이드바 가계부 요약 — 데이터는 useCalendarOverlays 가 이미 불러온 화면 기간의 일별 합계를 재사용한다.
  * - 선택한 날: 일별 합계에서 꺼낸다 (내역이 없는 날은 0)
- * - 이번 달: 화면이 그 달 전체를 덮으면(월간 보기) 일별 합계 중 그 달 날짜만 더한다 (6주 격자의 앞뒤 달 날짜 제외).
- *   주·일 보기처럼 달 일부만 보일 때만 월별 요약 API 를 따로 부른다
+ * - 이번 달(선택한 날의 달): 화면이 그 달 전체를 덮으면(월간 보기의 같은 달) 일별 합계 중 그 달 날짜만 더한다 (6주 격자의 앞뒤 달 날짜 제외).
+ *   주·일 보기나 격자의 앞뒤 달 칸을 골라 달 일부만 보일 때만 월별 요약 API 를 따로 부른다
  * - reloadKey 가 바뀌면(캘린더에서 가계부를 새로 입력한 뒤) 월별 요약도 다시 부른다
  */
 export default function useCalendarMoneySummary(
@@ -59,10 +59,14 @@ export default function useCalendarMoneySummary(
   selectedDay: string | null,
   reloadKey = 0,
 ): CalendarMoneySummary {
-  const monthStart = dayjs(anchor).startOf('month')
-  const month = monthStart.format('YYYY-MM')
   const rangeFrom = dayjs(range.from).format(DATE_FORMAT)
   const rangeTo = dayjs(range.to).format(DATE_FORMAT)
+  const inRange = selectedDay !== null && selectedDay >= rangeFrom && selectedDay <= rangeTo
+  const day = inRange ? selectedDay : defaultSelectedDay(anchor, range)
+
+  // '이번 달'은 선택한 날의 달 — 두 달에 걸친 주나 월간 격자의 앞뒤 달 칸을 고르면 그 달 합계를 보여 준다
+  const monthStart = dayjs(day).startOf('month')
+  const month = monthStart.format('YYYY-MM')
   const coversMonth =
     rangeFrom <= monthStart.format(DATE_FORMAT) && rangeTo >= monthStart.endOf('month').format(DATE_FORMAT)
   const needsMonthly = !coversMonth && overlays.expensesStatus !== 'off'
@@ -109,9 +113,6 @@ export default function useCalendarMoneySummary(
     monthTotals = null
     monthStatus = 'loading'
   }
-
-  const inRange = selectedDay !== null && selectedDay >= rangeFrom && selectedDay <= rangeTo
-  const day = inRange ? selectedDay : defaultSelectedDay(anchor, range)
 
   return {
     month,

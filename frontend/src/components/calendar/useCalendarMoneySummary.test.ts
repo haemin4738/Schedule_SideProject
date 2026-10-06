@@ -153,18 +153,35 @@ describe('useCalendarMoneySummary', () => {
       expect(result.current.monthStatus).toBe('ready')
     })
 
-    it('useCalendarMoneySummary_selectedOffRangeDayInGrid_returnsThatDayTotals', () => {
-      // 9월 격자 안의 10/1 칸을 고르면 달 합계는 9월, 날 합계는 10/1
+    it('useCalendarMoneySummary_selectedNextMonthDayInGrid_followsThatMonthViaMonthlyApi', async () => {
+      // 9월 격자 안의 10/1 칸을 고르면 날 합계는 10/1, 달 합계도 10월 — 격자가 10월 전체를 덮지 않으므로 월별 요약 API
+      mockedMonthly.mockResolvedValue(monthlyRes(5000, 777))
       const { result } = renderSummary({
         anchor: new Date(2026, 8, 30),
         range: SEPT_GRID,
-        overlays: overlays([item('2026-10-01', 0, 777)]),
+        overlays: overlays([item('2026-09-30', 0, 100), item('2026-10-01', 0, 777)]),
         selectedDay: '2026-10-01',
       })
 
-      expect(result.current.month).toBe('2026-09')
+      expect(result.current.month).toBe('2026-10')
       expect(result.current.day).toBe('2026-10-01')
       expect(result.current.dayTotals).toEqual({ income: 0, expense: 777, net: -777 })
+      expect(mockedMonthly).toHaveBeenCalledWith({ from: '2026-10', to: '2026-10' })
+      await waitFor(() => expect(result.current.monthStatus).toBe('ready'))
+      expect(result.current.monthTotals).toEqual({ income: 5000, expense: 777, net: 4223 })
+    })
+
+    it('useCalendarMoneySummary_selectedSameMonthDay_keepsDailySumWithoutMonthlyRequest', () => {
+      const { result } = renderSummary({
+        anchor: new Date(2026, 8, 30),
+        range: SEPT_GRID,
+        overlays: overlays([item('2026-09-10', 0, 100), item('2026-10-01', 0, 777)]),
+        selectedDay: '2026-09-10',
+      })
+
+      expect(result.current.month).toBe('2026-09')
+      expect(result.current.monthTotals).toEqual({ income: 0, expense: 100, net: -100 })
+      expect(mockedMonthly).not.toHaveBeenCalled()
     })
 
     it('useCalendarMoneySummary_selectedDayOutsideRange_fallsBackToDefaultDay', () => {
