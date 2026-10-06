@@ -594,6 +594,173 @@ describe('CalendarPage', () => {
       await waitFor(() => expect(within(panel()).getAllByText('불러오지 못했습니다.')).toHaveLength(2))
       expect(await screen.findByText('팀 회의')).toBeInTheDocument()
     })
+
+    const monthlyRes = (totalIncome: number, totalExpense: number) =>
+      ({
+        data: { success: true, data: { from: '', to: '', totalIncome, totalExpense, net: totalIncome - totalExpense, months: [] } },
+      }) as never
+    const switchView = (user: ReturnType<typeof userEvent.setup>, name: string) =>
+      user.click(within(screen.getByRole('group', { name: '보기 전환' })).getByRole('button', { name }))
+
+    /**
+     * 월간 보기의 날짜 칸을 마우스로 한 번 누른다.
+     * react-big-calendar 는 document 의 mousedown/mouseup 좌표와 각 주 행(.rbc-row-bg)의 위치로 칸을 계산하는데
+     * jsdom 에는 레이아웃이 없어, 주 행마다 가로 700px·세로 100px 위치와 elementFromPoint 를 흉내 낸다
+     */
+    const clickMonthCell = (weekIndex: number, dayIndex: number) => {
+      const rows = Array.from(document.querySelectorAll<HTMLElement>('.rbc-month-view .rbc-row-bg'))
+      rows.forEach((row, i) => {
+        row.getBoundingClientRect = () => ({ top: i * 100, left: 0, bottom: i * 100 + 100, right: 700 }) as DOMRect
+        Object.defineProperty(row, 'offsetWidth', { configurable: true, value: 700 })
+        Object.defineProperty(row, 'offsetHeight', { configurable: true, value: 100 })
+      })
+      const cell = rows[weekIndex].querySelectorAll<HTMLElement>('.rbc-day-bg')[dayIndex]
+      document.elementFromPoint = () => cell
+      const point = { clientX: dayIndex * 100 + 50, clientY: weekIndex * 100 + 50, button: 0 }
+      fireEvent.mouseDown(cell, point)
+      fireEvent.mouseUp(cell, point)
+    }
+
+    it('onSelectSlot_clickMonthCell_showsSelectedDayTotals', async () => {
+      const user = userEvent.setup()
+      mockedDaily.mockResolvedValue(
+        dailyRes([
+          { date: '2026-09-16', income: 7000, expense: 2000, net: 5000 },
+          { date: '2026-09-30', income: 0, expense: 3000, net: -3000 },
+        ]),
+      )
+      renderPage()
+      await waitFor(() => expect(totals('9월 30일 (수)')).toHaveTextContent('합계-3,000원'))
+
+      // 9월 격자 3번째 주(9/13~9/19)의 수요일 = 9/16
+      act(() => clickMonthCell(2, 3))
+
+      // 칸을 누르면 일정 만들기 창도 열린다 — 닫고 사이드바를 본다
+      await user.click(await screen.findByRole('button', { name: '취소' }))
+      expect(totals('9월 16일 (수)')).toHaveTextContent('수입7,000원지출2,000원합계5,000원')
+      expect(within(panel()).queryByRole('heading', { name: '9월 30일 (수)' })).not.toBeInTheDocument()
+    })
+
+    it('onNavigate_afterSelectingDay_resetsToDefaultDay', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await waitFor(() => expect(mockedDaily).toHaveBeenCalledTimes(1))
+      act(() => clickMonthCell(2, 3))
+      await user.click(await screen.findByRole('button', { name: '취소' }))
+      expect(within(panel()).getByRole('heading', { name: '9월 16일 (수)' })).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: '다음' }))
+      expect(within(panel()).getByRole('heading', { name: '10월 1일 (목)' })).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: '이전' }))
+      // 다시 9월로 와도 고른 날(9/16)이 아니라 기본값(오늘)
+      expect(within(panel()).getByRole('heading', { name: '9월 30일 (수)' })).toBeInTheDocument()
+    })
+
+    it('onNavigate_prevMonth_defaultsToFirstDayOfThatMonth', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await user.click(screen.getByRole('button', { name: '이전' }))
+
+      expect(within(panel()).getByRole('heading', { name: '8월 1일 (토)' })).toBeInTheDocument()
+      expect(within(panel()).getByRole('heading', { name: '8월 전체' })).toBeInTheDocument()
+      expect(within(panel()).getByRole('link', { name: '가계부 보기' })).toHaveAttribute('href', '/expenses?month=2026-08')
+    })
+
+    it('render_expensesLayerSavedOff_hidesPanelAndRequestsNoSummaryInAnyView', async () => {
+      const user = userEvent.setup()
+      localStorage.setItem(LAYERS_STORAGE_KEY, JSON.stringify({ expenses: false }))
+      renderPage()
+      await waitFor(() => expect(mockedSpecialDays).toHaveBeenCalled())
+
+      await switchView(user, '주')
+      await waitFor(() => expect(mockedSpecialDays).toHaveBeenCalledTimes(2))
+
+      expect(screen.queryByRole('region', { name: '가계부 요약' })).not.toBeInTheDocument()
+      expect(mockedDaily).not.toHaveBeenCalled()
+      expect(mockedMonthly).not.toHaveBeenCalled()
+    })
+
+    it('toggleLayer_expensesOffInWeekView_hidesPanelWithoutRefetching', async () => {
+      const user = userEvent.setup()
+      mockedMonthly.mockResolvedValue(monthlyRes(1000, 0))
+      renderPage()
+      await switchView(user, '주')
+      await waitFor(() => expect(mockedMonthly).toHaveBeenCalledTimes(1))
+
+      await user.click(layerButton('가계부'))
+
+      expect(screen.queryByRole('region', { name: '가계부 요약' })).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: '다음' }))
+      await waitFor(() => expect(mockedSpecialDays).toHaveBeenCalledTimes(3))
+      expect(mockedMonthly).toHaveBeenCalledTimes(1)
+    })
+
+    it('quickEntry_expenseSavedInWeekView_refetchesMonthlySummary', async () => {
+      const user = userEvent.setup()
+      mockedCategories.mockResolvedValue({
+        data: { success: true, data: [{ id: 3, type: 'EXPENSE', name: '식비' }] },
+      } as never)
+      mockedCreateExpense.mockResolvedValue({} as never)
+      mockedMonthly.mockResolvedValueOnce(monthlyRes(1000, 2000)).mockResolvedValueOnce(monthlyRes(1000, 14000))
+      renderPage()
+      await switchView(user, '주')
+      await waitFor(() => expect(totals('9월 전체')).toHaveTextContent('합계-1,000원'))
+
+      await user.click(screen.getByRole('button', { name: /만들기/ }))
+      await user.click(within(screen.getByRole('group', { name: '입력 종류' })).getByRole('button', { name: '가계부' }))
+      const dialog = screen.getByRole('dialog', { name: '내역 추가' })
+      await user.selectOptions(await within(dialog).findByLabelText('카테고리'), '3')
+      await user.type(within(dialog).getByPlaceholderText('금액 (원)'), '12000')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() => expect(mockedMonthly).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(totals('9월 전체')).toHaveTextContent('수입1,000원지출14,000원합계-13,000원'))
+    })
+
+    it('quickEntry_expenseSavedInMonthView_updatesTotalsFromReloadedDaily', async () => {
+      const user = userEvent.setup()
+      mockedCategories.mockResolvedValue({
+        data: { success: true, data: [{ id: 3, type: 'EXPENSE', name: '식비' }] },
+      } as never)
+      mockedCreateExpense.mockResolvedValue({} as never)
+      mockedDaily
+        .mockResolvedValueOnce(dailyRes([]))
+        .mockResolvedValueOnce(dailyRes([{ date: '2026-09-30', income: 0, expense: 12000, net: -12000 }]))
+      renderPage()
+      await waitFor(() => expect(totals('9월 전체')).toHaveTextContent('합계0원'))
+
+      await user.click(screen.getByRole('button', { name: /만들기/ }))
+      await user.click(within(screen.getByRole('group', { name: '입력 종류' })).getByRole('button', { name: '가계부' }))
+      const dialog = screen.getByRole('dialog', { name: '내역 추가' })
+      await user.selectOptions(await within(dialog).findByLabelText('카테고리'), '3')
+      await user.type(within(dialog).getByPlaceholderText('금액 (원)'), '12000')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() => expect(totals('9월 전체')).toHaveTextContent('지출12,000원합계-12,000원'))
+      expect(totals('9월 30일 (수)')).toHaveTextContent('지출12,000원합계-12,000원')
+      // 월간 보기는 저장 후에도 월별 요약 API 를 부르지 않는다
+      expect(mockedMonthly).not.toHaveBeenCalled()
+    })
+
+    it('load_monthlyFailsInWeekView_showsErrorOnlyInPanelAndKeepsCalendar', async () => {
+      const user = userEvent.setup()
+      mockedMonthly.mockRejectedValue(new Error('Network Error'))
+      mockedDaily.mockResolvedValue(dailyRes([{ date: '2026-09-30', income: 0, expense: 3000, net: -3000 }]))
+      mockedRange.mockResolvedValue([summary()])
+      renderPage()
+
+      await switchView(user, '주')
+
+      await waitFor(() => expect(within(totals('9월 전체')).getByText('불러오지 못했습니다.')).toBeInTheDocument())
+      // 선택한 날은 일별 합계로 정상 표시
+      expect(totals('9월 30일 (수)')).toHaveTextContent('합계-3,000원')
+      expect(await screen.findByText('팀 회의')).toBeInTheDocument()
+      expect(screen.getByText('-3,000')).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.getByRole('status')).not.toHaveTextContent('가계부')
+    })
   })
 
   describe('캘린더에서 바로 입력', () => {
