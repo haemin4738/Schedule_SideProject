@@ -31,6 +31,7 @@ class _Server {
     amount: 12000,
     transactionDate: '2026-09-28',
     memo: '상세 조회로만 오는 메모',
+    paymentMethod: 'CREDIT_CARD',
   );
 
   ResponseBody _handle(RequestOptions o) {
@@ -150,6 +151,8 @@ void main() {
     expect(body['categoryId'], 1);
     expect(body['amount'], 12000);
     expect(body['transactionDate'], '2026-09-28');
+    // 화면에 없는 결제수단도 PUT 전체 교체로 지워지지 않게 그대로 보낸다
+    expect(body['paymentMethod'], 'CREDIT_CARD');
     expect(find.text('내역 수정'), findsNothing);
   });
 

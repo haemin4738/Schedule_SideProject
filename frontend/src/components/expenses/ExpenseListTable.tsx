@@ -1,5 +1,6 @@
 import type { ExpenseSummary, PageMeta } from '@/api/expenses'
 import { formatSignedAmount } from '@/constants/expenseType'
+import { paymentMethodLabel } from '@/constants/paymentMethod'
 import dayjs from 'dayjs'
 
 interface Props {
@@ -52,7 +53,14 @@ export default function ExpenseListTable({
                 className="cursor-pointer border-t hover:bg-gray-50 focus:bg-blue-50 focus:outline-none"
               >
                 <td className="px-4 py-2">{dayjs(item.transactionDate).format('M/D')}</td>
-                <td className="px-4 py-2">{item.categoryName}</td>
+                <td className="px-4 py-2">
+                  {item.categoryName}
+                  {item.paymentMethod && (
+                    <span className="block text-xs text-gray-400">
+                      {paymentMethodLabel(item.paymentMethod)}
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-2">{item.description || '-'}</td>
                 <td
                   className={`px-4 py-2 text-right ${

@@ -12,6 +12,7 @@ import {
   MIN_AMOUNT,
   type ExpenseType,
 } from '@/constants/expenseType'
+import { PAYMENT_METHOD_LABELS, PAYMENT_METHOD_OPTIONS, type PaymentMethod } from '@/constants/paymentMethod'
 import { useState, type ReactNode } from 'react'
 import { useDialog } from './useDialog'
 import { useForm, useWatch } from 'react-hook-form'
@@ -20,6 +21,8 @@ interface FormValues {
   type: ExpenseType
   categoryId: string
   amount: string
+  /** '' 은 '선택 안 함' (null 로 보냄) */
+  paymentMethod: PaymentMethod | ''
   transactionDate: string
   description: string
   memo: string
@@ -86,6 +89,7 @@ export default function ExpenseFormModal({
           type: expense.type,
           categoryId: String(expense.categoryId),
           amount: String(expense.amount),
+          paymentMethod: expense.paymentMethod ?? '',
           transactionDate: expense.transactionDate,
           description: expense.description ?? '',
           memo: expense.memo ?? '',
@@ -94,6 +98,7 @@ export default function ExpenseFormModal({
           type: 'EXPENSE',
           categoryId: '',
           amount: '',
+          paymentMethod: '',
           transactionDate: defaultDate,
           description: '',
           memo: '',
@@ -111,6 +116,8 @@ export default function ExpenseFormModal({
     if (type === selectedType) return
     setValue('type', type)
     setValue('categoryId', '')
+    // 수입에는 결제수단을 지정할 수 없다 (서버 400) — 숨기면서 값도 비운다
+    if (type === 'INCOME') setValue('paymentMethod', '')
   }
 
   const onSubmit = async (values: FormValues) => {
@@ -119,6 +126,7 @@ export default function ExpenseFormModal({
       type: values.type,
       categoryId: Number(values.categoryId),
       amount: Number(values.amount),
+      paymentMethod: values.type === 'INCOME' ? null : values.paymentMethod || null,
       transactionDate: values.transactionDate,
       // description 은 앞뒤 공백 제거, memo 는 줄바꿈/들여쓰기를 보존해 원문 그대로 (공백만이면 null) — Flutter 와 동일
       description: values.description.trim() || null,
@@ -228,6 +236,22 @@ export default function ExpenseFormModal({
             />
             {errors.amount && <p className="mt-1 text-xs text-red-500">{errors.amount.message}</p>}
           </div>
+          {selectedType === 'EXPENSE' && (
+            <div>
+              <select aria-label="결제수단" {...register('paymentMethod')} className={inputClass}>
+                <option value="">결제수단 선택 안 함</option>
+                {/* 웹이 모르는 기존 값이면 빈 선택처럼 보이지 않게 그대로 선택지로 보여 준다 */}
+                {expense?.paymentMethod && !(expense.paymentMethod in PAYMENT_METHOD_LABELS) && (
+                  <option value={expense.paymentMethod}>{expense.paymentMethod}</option>
+                )}
+                {PAYMENT_METHOD_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <input
               {...register('transactionDate', { required: '날짜는 필수입니다.' })}

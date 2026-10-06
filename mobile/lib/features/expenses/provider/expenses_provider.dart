@@ -28,6 +28,10 @@ DateTime lastDayOfMonth(DateTime date) => DateTime(date.year, date.month + 1, 0)
 
 /// 목록(ExpenseSummary) / 상세(ExpenseResponse) 응답을 모두 이 모델 하나로 파싱한다.
 /// 목록 응답에는 memo 가 없으므로 수정 폼은 반드시 getDetail() 결과로 채운다.
+///
+/// [paymentMethod] 는 화면에 쓰지 않는다(Flutter 는 결제수단 UI 없음). PUT 이 전체 교체라
+/// 수정 시 그대로 돌려보내 웹에서 입력한 값이 지워지지 않게 하려고만 보관한다.
+/// 서버 enum 이 늘어나도 깨지지 않도록 문자열 그대로 둔다.
 class ExpenseItem {
   final int id;
   final ExpenseType type;
@@ -37,6 +41,7 @@ class ExpenseItem {
   final String transactionDate;
   final String? description;
   final String? memo;
+  final String? paymentMethod;
 
   const ExpenseItem({
     required this.id,
@@ -47,6 +52,7 @@ class ExpenseItem {
     required this.transactionDate,
     this.description,
     this.memo,
+    this.paymentMethod,
   });
 
   factory ExpenseItem.fromJson(Map<String, dynamic> json) => ExpenseItem(
@@ -58,6 +64,7 @@ class ExpenseItem {
         transactionDate: json['transactionDate'] as String,
         description: json['description'] as String?,
         memo: json['memo'] as String?,
+        paymentMethod: json['paymentMethod'] as String?,
       );
 }
 
@@ -189,10 +196,14 @@ class ExpensesNotifier extends StateNotifier<AsyncValue<ExpensesState>> {
       'transactionDate': transactionDate,
       'description': description,
       'memo': memo,
+      // Flutter 에는 결제수단 입력 UI 가 없으므로 생성 시 항상 미지정
+      'paymentMethod': null,
     });
     await refresh();
   }
 
+  /// [paymentMethod] 는 수정 전 값(getDetail 결과)을 그대로 넘긴다.
+  /// 수입에는 결제수단이 없으므로 type 이 INCOME 이면 null 로 보낸다.
   Future<void> update(
     int id, {
     required ExpenseType type,
@@ -201,6 +212,7 @@ class ExpensesNotifier extends StateNotifier<AsyncValue<ExpensesState>> {
     required String transactionDate,
     String? description,
     String? memo,
+    String? paymentMethod,
   }) async {
     await _dio.put('/api/v1/expenses/$id', data: {
       'type': type.name,
@@ -209,6 +221,7 @@ class ExpensesNotifier extends StateNotifier<AsyncValue<ExpensesState>> {
       'transactionDate': transactionDate,
       'description': description,
       'memo': memo,
+      'paymentMethod': type == ExpenseType.INCOME ? null : paymentMethod,
     });
     await refresh();
   }

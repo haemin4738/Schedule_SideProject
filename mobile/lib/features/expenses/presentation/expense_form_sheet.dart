@@ -118,6 +118,8 @@ class _ExpenseFormSheetState extends ConsumerState<ExpenseFormSheet> {
           transactionDate: transactionDate,
           description: description.isEmpty ? null : description,
           memo: memo,
+          // 결제수단 UI 는 없지만 PUT 전체 교체로 웹에서 입력한 값이 지워지지 않게 그대로 보낸다
+          paymentMethod: widget.existing!.paymentMethod,
         );
       }
       if (mounted) Navigator.pop(context, true);

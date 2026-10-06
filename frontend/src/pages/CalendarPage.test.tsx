@@ -622,6 +622,28 @@ describe('CalendarPage', () => {
       await waitFor(() => expect(mockedDaily).toHaveBeenCalledTimes(2))
     })
 
+    it('quickEntry_expenseTab_showsPaymentMethodSelect', async () => {
+      const user = userEvent.setup()
+      mockedCategories.mockResolvedValue({
+        data: { success: true, data: [{ id: 3, type: 'EXPENSE', name: '식비' }] },
+      } as never)
+      mockedCreateExpense.mockResolvedValue({} as never)
+      renderPage()
+
+      await user.click(screen.getByRole('button', { name: /만들기/ }))
+      await user.click(entryTab('가계부'))
+
+      const dialog = screen.getByRole('dialog', { name: '내역 추가' })
+      await user.selectOptions(await within(dialog).findByLabelText('카테고리'), '3')
+      await user.type(within(dialog).getByPlaceholderText('금액 (원)'), '12000')
+      await user.selectOptions(within(dialog).getByLabelText('결제수단'), 'CREDIT_CARD')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() =>
+        expect(mockedCreateExpense).toHaveBeenCalledWith(expect.objectContaining({ paymentMethod: 'CREDIT_CARD' })),
+      )
+    })
+
     it('onTabExpense_noCategories_addDefaultsShowsCategorySelect', async () => {
       const user = userEvent.setup()
       mockedCategories.mockResolvedValue({ data: { success: true, data: [] } } as never)

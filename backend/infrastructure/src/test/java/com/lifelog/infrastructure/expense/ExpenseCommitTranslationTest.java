@@ -84,7 +84,7 @@ class ExpenseCommitTranslationTest {
             entityManager.persist(user);
             userId = user.getId();
             ExpenseCategory food = categoryRepository.save(ExpenseCategory.create(user, ExpenseType.EXPENSE, "식비"));
-            expenseRepository.save(Expense.create(user, food, ExpenseType.EXPENSE, 1_000L,
+            expenseRepository.save(Expense.create(user, food, ExpenseType.EXPENSE, 1_000L, null,
                     LocalDate.of(2026, 9, 1), null, null));
             return food.getId();
         });

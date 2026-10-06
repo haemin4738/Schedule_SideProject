@@ -67,6 +67,7 @@ const lunch: ExpenseSummary = {
   categoryId: 1,
   categoryName: '식비',
   amount: 12000,
+  paymentMethod: 'CREDIT_CARD',
   transactionDate: thisMonth.add(4, 'day').format('YYYY-MM-DD'),
   description: '점심',
 }
@@ -76,6 +77,7 @@ const salary: ExpenseSummary = {
   categoryId: 2,
   categoryName: '월급',
   amount: 3000000,
+  paymentMethod: null,
   transactionDate: thisMonth.format('YYYY-MM-DD'),
   description: null,
 }
@@ -555,6 +557,7 @@ describe('ExpensesPage', () => {
           type: 'EXPENSE',
           categoryId: 1,
           amount: 12000,
+          paymentMethod: null,
           transactionDate: dayjs().format('YYYY-MM-DD'),
           description: '점심',
           memo: '회사 근처',
@@ -759,6 +762,7 @@ describe('ExpensesPage', () => {
           type: 'EXPENSE',
           categoryId: 1,
           amount: 12000,
+          paymentMethod: 'CREDIT_CARD',
           transactionDate: lunch.transactionDate,
           description: '점심',
           memo: '기존 메모',
@@ -855,6 +859,165 @@ describe('ExpensesPage', () => {
 
       expect(await screen.findByText('가계부 내역을 찾을 수 없습니다.')).toBeInTheDocument()
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('결제수단', () => {
+    it('create_withPaymentMethod_sendsIt', async () => {
+      const user = userEvent.setup()
+      mockListResponse([])
+      mockedCreateExpense.mockResolvedValue({ data: { success: true, data: {} } } as never)
+      renderPage()
+      await screen.findByText('내역이 없습니다')
+
+      const dialog = await openCreateFormWithCategories(user)
+      const select = within(dialog).getByLabelText('결제수단')
+      expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual([
+        '결제수단 선택 안 함',
+        '신용카드',
+        '체크카드',
+        '현금',
+        '계좌이체',
+        '간편결제',
+        '기타',
+      ])
+      await user.selectOptions(within(dialog).getByLabelText('카테고리'), '1')
+      await user.type(within(dialog).getByPlaceholderText('금액 (원)'), '5000')
+      await user.selectOptions(select, 'EASY_PAY')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() => {
+        expect(mockedCreateExpense).toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'EXPENSE', amount: 5000, paymentMethod: 'EASY_PAY' }),
+        )
+      })
+    })
+
+    it('create_withoutPaymentMethod_sendsNull', async () => {
+      const user = userEvent.setup()
+      mockListResponse([])
+      mockedCreateExpense.mockResolvedValue({ data: { success: true, data: {} } } as never)
+      renderPage()
+      await screen.findByText('내역이 없습니다')
+
+      const dialog = await openCreateFormWithCategories(user)
+      expect(within(dialog).getByLabelText('결제수단')).toHaveValue('')
+      await user.selectOptions(within(dialog).getByLabelText('카테고리'), '1')
+      await user.type(within(dialog).getByPlaceholderText('금액 (원)'), '5000')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() => {
+        expect(mockedCreateExpense).toHaveBeenCalledWith(expect.objectContaining({ paymentMethod: null }))
+      })
+    })
+
+    it('changeFormType_whenSwitchedToIncome_hidesAndClearsPaymentMethod', async () => {
+      const user = userEvent.setup()
+      mockListResponse([])
+      mockedCreateExpense.mockResolvedValue({ data: { success: true, data: {} } } as never)
+      renderPage()
+      await screen.findByText('내역이 없습니다')
+
+      const dialog = await openCreateFormWithCategories(user)
+      await user.selectOptions(within(dialog).getByLabelText('결제수단'), 'CASH')
+
+      await user.click(within(dialog).getByRole('button', { name: '수입' }))
+      expect(within(dialog).queryByLabelText('결제수단')).not.toBeInTheDocument()
+
+      // 다시 지출로 돌아와도 이전 값이 남아 있지 않아야 한다
+      await user.click(within(dialog).getByRole('button', { name: '지출' }))
+      expect(within(dialog).getByLabelText('결제수단')).toHaveValue('')
+
+      await user.click(within(dialog).getByRole('button', { name: '수입' }))
+      await user.selectOptions(within(dialog).getByLabelText('카테고리'), '2')
+      await user.type(within(dialog).getByPlaceholderText('금액 (원)'), '3000000')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() => {
+        expect(mockedCreateExpense).toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'INCOME', categoryId: 2, paymentMethod: null }),
+        )
+      })
+    })
+
+    it('edit_withPaymentMethod_prefillsAndPreservesOnSave', async () => {
+      const user = userEvent.setup()
+      const debit: ExpenseSummary = { ...lunch, paymentMethod: 'DEBIT_CARD' }
+      mockListResponse([debit])
+      mockedGetExpense.mockResolvedValue(detailOf(debit))
+      mockedUpdateExpense.mockResolvedValue({ data: { success: true, data: {} } } as never)
+      renderPage()
+
+      await user.click(await screen.findByText('점심'))
+      const dialog = await screen.findByRole('dialog', { name: '내역 수정' })
+      expect(within(dialog).getByLabelText('결제수단')).toHaveValue('DEBIT_CARD')
+
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() => {
+        expect(mockedUpdateExpense).toHaveBeenCalledWith(
+          10,
+          expect.objectContaining({ paymentMethod: 'DEBIT_CARD' }),
+        )
+      })
+    })
+
+    it('edit_whenChangedToIncome_sendsNullPaymentMethod', async () => {
+      const user = userEvent.setup()
+      mockListResponse([lunch])
+      mockedGetExpense.mockResolvedValue(detailOf(lunch))
+      mockedUpdateExpense.mockResolvedValue({ data: { success: true, data: {} } } as never)
+      renderPage()
+
+      await user.click(await screen.findByText('점심'))
+      const dialog = await screen.findByRole('dialog', { name: '내역 수정' })
+      await user.click(within(dialog).getByRole('button', { name: '수입' }))
+      await user.selectOptions(within(dialog).getByLabelText('카테고리'), '2')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() => {
+        expect(mockedUpdateExpense).toHaveBeenCalledWith(
+          10,
+          expect.objectContaining({ type: 'INCOME', paymentMethod: null }),
+        )
+      })
+    })
+
+    it('edit_withUnknownPaymentMethod_showsItAndPreservesOnSave', async () => {
+      const user = userEvent.setup()
+      const unknown = { ...lunch, paymentMethod: 'POINT' } as unknown as ExpenseSummary
+      mockListResponse([unknown])
+      mockedGetExpense.mockResolvedValue(detailOf(unknown))
+      mockedUpdateExpense.mockResolvedValue({ data: { success: true, data: {} } } as never)
+      renderPage()
+
+      const row = (await screen.findByText('점심')).closest('tr') as HTMLElement
+      expect(within(row).getByText('POINT')).toBeInTheDocument()
+
+      await user.click(within(row).getByText('점심'))
+      const dialog = await screen.findByRole('dialog', { name: '내역 수정' })
+      expect(within(dialog).getByLabelText('결제수단')).toHaveValue('POINT')
+      await user.click(within(dialog).getByRole('button', { name: '저장' }))
+
+      await waitFor(() => {
+        expect(mockedUpdateExpense).toHaveBeenCalledWith(
+          10,
+          expect.objectContaining({ paymentMethod: 'POINT' }),
+        )
+      })
+    })
+
+    it('render_withPaymentMethod_showsLabelUnderCategory', async () => {
+      mockListResponse([lunch, salary])
+      renderPage()
+
+      const lunchRow = (await screen.findByText('점심')).closest('tr') as HTMLElement
+      const categoryCell = within(lunchRow).getByText('식비').closest('td') as HTMLElement
+      expect(within(categoryCell).getByText('신용카드')).toBeInTheDocument()
+
+      const salaryRow = within(screen.getByRole('table')).getByText('월급').closest('tr') as HTMLElement
+      const salaryCategoryCell = within(salaryRow).getByText('월급').closest('td') as HTMLElement
+      expect(salaryCategoryCell).toHaveTextContent(/^월급$/)
     })
   })
 

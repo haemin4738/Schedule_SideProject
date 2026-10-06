@@ -35,7 +35,7 @@ public class ExpenseService {
         ExpenseCategory category = getOwnedCategory(request.categoryId(), userId);
         validateTypeMatches(category, request.type());
         Expense expense = Expense.create(user, category, request.type(), request.amount(),
-                request.transactionDate(), request.description(), request.memo());
+                request.paymentMethod(), request.transactionDate(), request.description(), request.memo());
         Expense saved = expenseRepository.save(expense);
         log.info("Expense created: id={}, userId={}", saved.getId(), userId);
         return ExpenseResponse.from(saved);
@@ -61,8 +61,8 @@ public class ExpenseService {
         Expense expense = getOwnedExpense(id, userId);
         ExpenseCategory category = getOwnedCategory(request.categoryId(), userId);
         validateTypeMatches(category, request.type());
-        expense.update(category, request.type(), request.amount(), request.transactionDate(),
-                request.description(), request.memo());
+        expense.update(category, request.type(), request.amount(), request.paymentMethod(),
+                request.transactionDate(), request.description(), request.memo());
         return ExpenseResponse.from(expenseRepository.save(expense));
     }
 

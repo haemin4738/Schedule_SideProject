@@ -6,6 +6,7 @@ import com.lifelog.domain.expense.ExpenseCategory;
 import com.lifelog.domain.expense.ExpenseCategoryRepository;
 import com.lifelog.domain.expense.ExpenseRepository;
 import com.lifelog.domain.expense.ExpenseType;
+import com.lifelog.domain.expense.PaymentMethod;
 import com.lifelog.domain.user.User;
 import com.lifelog.domain.user.UserRepository;
 import com.lifelog.expense.dto.ExpenseRequest;
@@ -64,11 +65,15 @@ class ExpenseServiceTest {
     }
 
     private ExpenseRequest request(ExpenseType type, Long categoryId, long amount) {
-        return new ExpenseRequest(type, categoryId, amount, LocalDate.of(2026, 9, 1), "점심", "메모");
+        return new ExpenseRequest(type, categoryId, amount, null, LocalDate.of(2026, 9, 1), "점심", "메모");
+    }
+
+    private ExpenseRequest request(ExpenseType type, Long categoryId, long amount, PaymentMethod paymentMethod) {
+        return new ExpenseRequest(type, categoryId, amount, paymentMethod, LocalDate.of(2026, 9, 1), "점심", "메모");
     }
 
     private Expense expense(Long id, User user, ExpenseCategory category) {
-        return withId(Expense.create(user, category, category.getType(), 12_000L,
+        return withId(Expense.create(user, category, category.getType(), 12_000L, null,
                 LocalDate.of(2026, 9, 1), "점심", "메모"), id);
     }
 
@@ -300,5 +305,74 @@ class ExpenseServiceTest {
         assertThatThrownBy(() -> service.delete(1L, 999L))
                 .isInstanceOf(BusinessException.class)
                 .extracting(ExpenseServiceTest::statusOf).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    // ---- paymentMethod ----
+
+    @Test
+    void create_withPaymentMethod_passesItToEntityAndResponse() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(owner));
+        when(expenseCategoryRepository.findById(10L)).thenReturn(Optional.of(food));
+        when(expenseRepository.save(any(Expense.class))).thenAnswer(inv -> withId(inv.getArgument(0), 100L));
+
+        ExpenseResponse response = service.create(1L,
+                request(ExpenseType.EXPENSE, 10L, 12_000L, PaymentMethod.DEBIT_CARD));
+
+        org.mockito.ArgumentCaptor<Expense> captor = org.mockito.ArgumentCaptor.forClass(Expense.class);
+        verify(expenseRepository).save(captor.capture());
+        assertThat(captor.getValue().getPaymentMethod()).isEqualTo(PaymentMethod.DEBIT_CARD);
+        assertThat(response.paymentMethod()).isEqualTo(PaymentMethod.DEBIT_CARD);
+    }
+
+    @Test
+    void create_withoutPaymentMethod_returnsNullPaymentMethod() {
+        when(userRepository.findById(1L)).thenReturn(Optional.of(owner));
+        when(expenseCategoryRepository.findById(10L)).thenReturn(Optional.of(food));
+        when(expenseRepository.save(any(Expense.class))).thenAnswer(inv -> withId(inv.getArgument(0), 100L));
+
+        ExpenseResponse response = service.create(1L, request(ExpenseType.EXPENSE, 10L, 12_000L));
+
+        assertThat(response.paymentMethod()).isNull();
+    }
+
+    @Test
+    void update_withPaymentMethod_changesPaymentMethod() {
+        Expense existing = expense(100L, owner, food);
+        when(expenseRepository.findById(100L)).thenReturn(Optional.of(existing));
+        when(expenseCategoryRepository.findById(10L)).thenReturn(Optional.of(food));
+        when(expenseRepository.save(existing)).thenReturn(existing);
+
+        ExpenseResponse response = service.update(1L, 100L,
+                request(ExpenseType.EXPENSE, 10L, 12_000L, PaymentMethod.CASH));
+
+        assertThat(existing.getPaymentMethod()).isEqualTo(PaymentMethod.CASH);
+        assertThat(response.paymentMethod()).isEqualTo(PaymentMethod.CASH);
+    }
+
+    @Test
+    void update_withoutPaymentMethod_clearsExistingPaymentMethod() {
+        Expense existing = withId(Expense.create(owner, food, ExpenseType.EXPENSE, 12_000L,
+                PaymentMethod.CREDIT_CARD, LocalDate.of(2026, 9, 1), "점심", null), 100L);
+        when(expenseRepository.findById(100L)).thenReturn(Optional.of(existing));
+        when(expenseCategoryRepository.findById(10L)).thenReturn(Optional.of(food));
+        when(expenseRepository.save(existing)).thenReturn(existing);
+
+        ExpenseResponse response = service.update(1L, 100L, request(ExpenseType.EXPENSE, 10L, 12_000L));
+
+        assertThat(existing.getPaymentMethod()).isNull();
+        assertThat(response.paymentMethod()).isNull();
+    }
+
+    @Test
+    void list_whenExpenseHasPaymentMethod_mapsItToSummary() {
+        Pageable pageable = PageRequest.of(0, 20);
+        Expense withMethod = withId(Expense.create(owner, food, ExpenseType.EXPENSE, 12_000L,
+                PaymentMethod.EASY_PAY, LocalDate.of(2026, 9, 1), "점심", null), 100L);
+        when(expenseRepository.findByUserIdAndFilter(1L, null, null, null, null, pageable))
+                .thenReturn(new PageImpl<>(List.of(withMethod), pageable, 1));
+
+        Page<ExpenseSummary> result = service.list(1L, null, null, null, null, pageable);
+
+        assertThat(result.getContent().get(0).paymentMethod()).isEqualTo(PaymentMethod.EASY_PAY);
     }
 }
