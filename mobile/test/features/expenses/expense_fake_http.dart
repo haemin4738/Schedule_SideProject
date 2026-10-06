@@ -66,6 +66,7 @@ Map<String, Object?> expenseJson(
   String transactionDate = '2026-09-10',
   String? description,
   String? memo,
+  String? paymentMethod,
 }) => {
   'id': id,
   'type': type,
@@ -75,6 +76,7 @@ Map<String, Object?> expenseJson(
   'transactionDate': transactionDate,
   'description': description,
   'memo': memo,
+  'paymentMethod': paymentMethod,
 };
 
 /// 목록 응답: items 와 페이지네이션 메타.

@@ -265,6 +265,7 @@ void main() {
         'transactionDate': '2026-09-03',
         'description': '용돈',
         'memo': '  줄바꿈\n포함 메모  ',
+        'paymentMethod': null,
       });
       expect(listRequests(), hasLength(2));
       notifier.dispose();
@@ -295,6 +296,64 @@ void main() {
       expect(body['memo'], '메모');
       expect(body['description'], isNull);
       expect(listRequests().last.queryParameters['page'], 1);
+      notifier.dispose();
+    });
+
+    test('update_지출유지_전달받은paymentMethod를그대로보낸다', () async {
+      final notifier = create();
+      await until(() => !notifier.state.isLoading);
+      handler = (o) => o.method == 'PUT'
+          ? ok(expenseJson(5))
+          : expensePage([expenseJson(5)]);
+
+      await notifier.update(
+        5,
+        type: ExpenseType.EXPENSE,
+        categoryId: 1,
+        amount: 800,
+        transactionDate: '2026-09-04',
+        paymentMethod: 'CREDIT_CARD',
+      );
+
+      final body = bodyOf(adapter.requestsOf('PUT', '$_list/5').single);
+      expect(body['paymentMethod'], 'CREDIT_CARD');
+      notifier.dispose();
+    });
+
+    test('update_수입으로전환_paymentMethod를null로보낸다', () async {
+      final notifier = create();
+      await until(() => !notifier.state.isLoading);
+      handler = (o) => o.method == 'PUT'
+          ? ok(expenseJson(5, type: 'INCOME'))
+          : expensePage([expenseJson(5, type: 'INCOME')]);
+
+      await notifier.update(
+        5,
+        type: ExpenseType.INCOME,
+        categoryId: 3,
+        amount: 800,
+        transactionDate: '2026-09-04',
+        paymentMethod: 'CREDIT_CARD',
+      );
+
+      final body = bodyOf(adapter.requestsOf('PUT', '$_list/5').single);
+      expect(body.containsKey('paymentMethod'), isTrue);
+      expect(body['paymentMethod'], isNull);
+      notifier.dispose();
+    });
+
+    test('getDetail_paymentMethod가있거나없음_문자열또는null로파싱한다', () async {
+      final notifier = create();
+      await until(() => !notifier.state.isLoading);
+      handler = (o) => o.path == '$_list/5'
+          ? ok(expenseJson(5, paymentMethod: 'CREDIT_CARD'))
+          : ok(expenseJson(6)..remove('paymentMethod'));
+
+      final withValue = await notifier.getDetail(5);
+      final withoutKey = await notifier.getDetail(6);
+
+      expect(withValue.paymentMethod, 'CREDIT_CARD');
+      expect(withoutKey.paymentMethod, isNull);
       notifier.dispose();
     });
 
