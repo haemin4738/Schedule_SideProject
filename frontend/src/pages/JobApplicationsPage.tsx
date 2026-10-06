@@ -10,10 +10,12 @@ import {
 } from '@/api/jobApplications'
 import {
   JOB_APPLICATION_STATUS_OPTIONS,
-  JOB_APPLICATION_STATUS_LABELS,
   type JobApplicationStatus,
 } from '@/constants/jobApplicationStatus'
 import LogoutButton from '@/components/LogoutButton'
+import JobApplicationCardList from '@/components/jobApplications/JobApplicationCardList'
+import JobApplicationStatusBadge from '@/components/jobApplications/JobApplicationStatusBadge'
+import { DESKTOP_MEDIA_QUERY, useMediaQuery } from '@/hooks/useMediaQuery'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -49,12 +51,15 @@ export default function JobApplicationsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [searchParams, setSearchParams] = useSearchParams()
   const formRef = useRef<HTMLFormElement>(null)
+  const formHeadingRef = useRef<HTMLHeadingElement>(null)
+  // 폰 폭에서는 표 대신 카드 목록. matchMedia 가 없는 환경(jsdom)은 기존 표로 본다
+  const isDesktop = useMediaQuery(DESKTOP_MEDIA_QUERY, true)
 
   const {
     register,
     handleSubmit,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<FormValues>({ defaultValues: emptyForm })
 
   const loadItems = useCallback(() => {
@@ -107,6 +112,33 @@ export default function JobApplicationsPage() {
     }
   }, [reset])
 
+  /**
+   * 수정 폼을 채운 뒤 폼으로 스크롤하고 폼 제목에 포커스한다 (?id= 진입, 카드 탭).
+   * 입력칸이 아니라 제목에 포커스해 폰에서 매번 키보드가 올라오지 않게 하고, 스크린리더에는 수정 폼이 열렸음을 알린다
+   */
+  const startEditAndFocusForm = useCallback(
+    async (id: number) => {
+      if (!(await startEdit(id))) return
+      formRef.current?.scrollIntoView?.({ block: 'start' })
+      formHeadingRef.current?.focus({ preventScroll: true })
+    },
+    [startEdit],
+  )
+
+  /**
+   * 카드 탭 — 카드는 누르는 영역이 넓어 스크롤 중 실수로 누르기 쉽다.
+   * 수정 중인 같은 카드면 다시 불러오지 않고 폼으로만 이동하고, 입력 중인 내용이 있으면 덮어쓰기 전에 확인한다
+   */
+  const onCardEdit = (id: number) => {
+    if (id === editingId) {
+      formRef.current?.scrollIntoView?.({ block: 'start' })
+      formHeadingRef.current?.focus({ preventScroll: true })
+      return
+    }
+    if (isDirty && !window.confirm('입력 중인 내용이 사라집니다. 다른 내역을 여시겠습니까?')) return
+    void startEditAndFocusForm(id)
+  }
+
   // 캘린더에서 구직활동을 누르면 ?id= 로 들어온다 → 해당 내역의 수정 폼을 연다
   const idParam = searchParams.get('id')
   useEffect(() => {
@@ -122,12 +154,8 @@ export default function JobApplicationsPage() {
     const id = Number(idParam)
     if (!Number.isSafeInteger(id) || id <= 0) return
     // 주소에서 id 를 지우면 이 effect 가 다시 정리되므로 취소 플래그 대신 startEdit 의 요청 순번으로 늦은 응답을 거른다
-    void startEdit(id).then((ok) => {
-      if (!ok) return
-      formRef.current?.scrollIntoView?.({ block: 'start' })
-      formRef.current?.querySelector('input')?.focus()
-    })
-  }, [idParam, setSearchParams, startEdit])
+    void startEditAndFocusForm(id)
+  }, [idParam, setSearchParams, startEditAndFocusForm])
 
   const cancelEdit = () => {
     editSeq.current++
@@ -173,7 +201,7 @@ export default function JobApplicationsPage() {
 
   return (
     <div className="mx-auto max-w-4xl p-4">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">구직활동 관리</h1>
         <div className="flex items-center gap-3">
           <Link to="/" className="text-sm text-blue-500 hover:underline">
@@ -186,9 +214,11 @@ export default function JobApplicationsPage() {
       <form
         ref={formRef}
         onSubmit={handleSubmit(onSubmit)}
-        className="mb-6 rounded-xl bg-white p-6 shadow"
+        className="mb-6 rounded-xl bg-white p-4 shadow sm:p-6"
       >
-        <h2 className="mb-4 text-lg font-medium">{editingId ? '지원 내역 수정' : '지원 내역 추가'}</h2>
+        <h2 ref={formHeadingRef} tabIndex={-1} className="mb-4 text-lg font-medium outline-none">
+          {editingId ? '지원 내역 수정' : '지원 내역 추가'}
+        </h2>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <input
@@ -290,68 +320,77 @@ export default function JobApplicationsPage() {
 
       {listError && <p className="mb-3 text-sm text-red-500">{listError}</p>}
 
-      <div className="overflow-hidden rounded-xl bg-white shadow">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-left text-gray-600">
-            <tr>
-              <th className="px-4 py-2">회사명</th>
-              <th className="px-4 py-2">직무</th>
-              <th className="px-4 py-2">상태</th>
-              <th className="px-4 py-2">지원일</th>
-              <th className="px-4 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr key={item.id} className="border-t">
-                <td className="px-4 py-2">{item.companyName}</td>
-                <td className="px-4 py-2">{item.position}</td>
-                <td className="px-4 py-2">
-                  <span className="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">
-                    {JOB_APPLICATION_STATUS_LABELS[item.status]}
-                  </span>
-                </td>
-                <td className="px-4 py-2">{item.appliedAt}</td>
-                <td className="px-4 py-2 text-right">
-                  <button
-                    onClick={() => startEdit(item.id)}
-                    className="mr-2 text-blue-500 hover:underline"
-                  >
-                    수정
-                  </button>
-                  <button
-                    onClick={() => onDelete(item.id)}
-                    className="text-red-500 hover:underline"
-                  >
-                    삭제
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {isLoading && (
+      {isDesktop ? (
+        <div className="overflow-hidden rounded-xl bg-white shadow">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-left text-gray-600">
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
-                  불러오는 중...
-                </td>
+                <th className="px-4 py-2">회사명</th>
+                <th className="px-4 py-2">직무</th>
+                <th className="px-4 py-2">상태</th>
+                <th className="px-4 py-2">지원일</th>
+                <th className="px-4 py-2"></th>
               </tr>
-            )}
-            {!isLoading && items.length === 0 && !listError && (
-              <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
-                  지원 내역이 없습니다.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.id} className="border-t">
+                  <td className="px-4 py-2">{item.companyName}</td>
+                  <td className="px-4 py-2">{item.position}</td>
+                  <td className="px-4 py-2">
+                    <JobApplicationStatusBadge status={item.status} />
+                  </td>
+                  <td className="px-4 py-2">{item.appliedAt}</td>
+                  <td className="px-4 py-2 text-right">
+                    <button
+                      onClick={() => startEdit(item.id)}
+                      className="mr-2 text-blue-500 hover:underline"
+                    >
+                      수정
+                    </button>
+                    <button
+                      onClick={() => onDelete(item.id)}
+                      className="text-red-500 hover:underline"
+                    >
+                      삭제
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {isLoading && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
+                    불러오는 중...
+                  </td>
+                </tr>
+              )}
+              {!isLoading && items.length === 0 && !listError && (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
+                    지원 내역이 없습니다.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <JobApplicationCardList
+          items={items}
+          isLoading={isLoading}
+          hasError={listError !== null}
+          editingId={editingId}
+          onEdit={onCardEdit}
+          onDelete={(id) => void onDelete(id)}
+        />
+      )}
 
       {meta && meta.totalPages > 1 && (
         <div className="mt-4 flex items-center justify-center gap-2">
           <button
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={page === 0}
-            className="rounded border px-3 py-1 text-sm disabled:opacity-40"
+            className="min-h-11 rounded border px-3 py-1 text-sm disabled:opacity-40 md:min-h-0"
           >
             이전
           </button>
@@ -361,7 +400,7 @@ export default function JobApplicationsPage() {
           <button
             onClick={() => setPage((p) => Math.min(meta.totalPages - 1, p + 1))}
             disabled={page >= meta.totalPages - 1}
-            className="rounded border px-3 py-1 text-sm disabled:opacity-40"
+            className="min-h-11 rounded border px-3 py-1 text-sm disabled:opacity-40 md:min-h-0"
           >
             다음
           </button>
