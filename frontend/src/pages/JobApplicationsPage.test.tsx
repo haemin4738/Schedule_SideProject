@@ -411,6 +411,68 @@ describe('JobApplicationsPage', () => {
       expect(screen.getByRole('button', { name: '수정 저장' })).toBeInTheDocument()
     })
 
+    it('clickCard_sameCardWhileEditing_keepsInputWithoutRefetch', async () => {
+      const user = userEvent.setup()
+      mockListResponse([sampleItem])
+      mockedGetJobApplication.mockResolvedValue(detailResponse())
+      renderPage()
+      await user.click(await findCard())
+      const company = screen.getByPlaceholderText('회사명')
+      await waitFor(() => expect(company).toHaveValue('테스트회사'))
+      await user.clear(company)
+      await user.type(company, '바꾼회사')
+
+      await user.click(await findCard())
+
+      expect(company).toHaveValue('바꾼회사')
+      expect(mockedGetJobApplication).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('heading', { name: '지원 내역 수정' })).toHaveFocus()
+    })
+
+    it('clickCard_otherCardWithUnsavedInput_asksBeforeReplacing', async () => {
+      const user = userEvent.setup()
+      const other = { ...sampleItem, id: 2, companyName: '다른회사' }
+      mockListResponse([sampleItem, other])
+      mockedGetJobApplication.mockImplementation(async (id: number) =>
+        detailResponse(id === 2 ? { id: 2, companyName: '다른회사' } : {}),
+      )
+      const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      renderPage()
+      await user.click(await findCard())
+      const company = screen.getByPlaceholderText('회사명')
+      await waitFor(() => expect(company).toHaveValue('테스트회사'))
+      await user.type(company, ' 수정중')
+
+      await user.click(await findCard('다른회사'))
+      expect(confirmSpy).toHaveBeenCalledTimes(1)
+      expect(company).toHaveValue('테스트회사 수정중')
+      expect(mockedGetJobApplication).toHaveBeenCalledTimes(1)
+
+      confirmSpy.mockReturnValue(true)
+      await user.click(await findCard('다른회사'))
+      await waitFor(() => expect(company).toHaveValue('다른회사'))
+      expect(mockedGetJobApplication).toHaveBeenLastCalledWith(2)
+    })
+
+    it('clickCard_otherCardWithoutChanges_switchesWithoutConfirm', async () => {
+      const user = userEvent.setup()
+      const other = { ...sampleItem, id: 2, companyName: '다른회사' }
+      mockListResponse([sampleItem, other])
+      mockedGetJobApplication.mockImplementation(async (id: number) =>
+        detailResponse(id === 2 ? { id: 2, companyName: '다른회사' } : {}),
+      )
+      const confirmSpy = vi.spyOn(window, 'confirm')
+      renderPage()
+      await user.click(await findCard())
+      const company = screen.getByPlaceholderText('회사명')
+      await waitFor(() => expect(company).toHaveValue('테스트회사'))
+
+      await user.click(await findCard('다른회사'))
+
+      await waitFor(() => expect(company).toHaveValue('다른회사'))
+      expect(confirmSpy).not.toHaveBeenCalled()
+    })
+
     it('clickCard_onMobile_fillsEditFormAndFocusesHeading', async () => {
       const user = userEvent.setup()
       mockListResponse([sampleItem])

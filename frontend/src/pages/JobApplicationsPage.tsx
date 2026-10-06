@@ -13,7 +13,8 @@ import {
   type JobApplicationStatus,
 } from '@/constants/jobApplicationStatus'
 import LogoutButton from '@/components/LogoutButton'
-import JobApplicationCardList, { JobApplicationStatusBadge } from '@/components/jobApplications/JobApplicationCardList'
+import JobApplicationCardList from '@/components/jobApplications/JobApplicationCardList'
+import JobApplicationStatusBadge from '@/components/jobApplications/JobApplicationStatusBadge'
 import { DESKTOP_MEDIA_QUERY, useMediaQuery } from '@/hooks/useMediaQuery'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -58,7 +59,7 @@ export default function JobApplicationsPage() {
     register,
     handleSubmit,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<FormValues>({ defaultValues: emptyForm })
 
   const loadItems = useCallback(() => {
@@ -123,6 +124,20 @@ export default function JobApplicationsPage() {
     },
     [startEdit],
   )
+
+  /**
+   * 카드 탭 — 카드는 누르는 영역이 넓어 스크롤 중 실수로 누르기 쉽다.
+   * 수정 중인 같은 카드면 다시 불러오지 않고 폼으로만 이동하고, 입력 중인 내용이 있으면 덮어쓰기 전에 확인한다
+   */
+  const onCardEdit = (id: number) => {
+    if (id === editingId) {
+      formRef.current?.scrollIntoView?.({ block: 'start' })
+      formHeadingRef.current?.focus({ preventScroll: true })
+      return
+    }
+    if (isDirty && !window.confirm('입력 중인 내용이 사라집니다. 다른 내역을 여시겠습니까?')) return
+    void startEditAndFocusForm(id)
+  }
 
   // 캘린더에서 구직활동을 누르면 ?id= 로 들어온다 → 해당 내역의 수정 폼을 연다
   const idParam = searchParams.get('id')
@@ -365,7 +380,7 @@ export default function JobApplicationsPage() {
           isLoading={isLoading}
           hasError={listError !== null}
           editingId={editingId}
-          onEdit={(id) => void startEditAndFocusForm(id)}
+          onEdit={onCardEdit}
           onDelete={(id) => void onDelete(id)}
         />
       )}

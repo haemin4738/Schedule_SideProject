@@ -2,7 +2,8 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { JobApplicationSummary } from '@/api/jobApplications'
-import JobApplicationCardList, { JobApplicationStatusBadge } from './JobApplicationCardList'
+import JobApplicationCardList from './JobApplicationCardList'
+import JobApplicationStatusBadge from './JobApplicationStatusBadge'
 
 const base: JobApplicationSummary = {
   id: 1,
