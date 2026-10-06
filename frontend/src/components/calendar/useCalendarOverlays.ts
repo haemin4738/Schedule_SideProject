@@ -13,6 +13,8 @@ export interface CalendarOverlays {
   /** yyyy-MM-dd → 그날의 수입·지출 합계 (내역이 있는 날만) */
   expenses: Map<string, DailyItem>
   jobApplications: JobApplicationSummary[]
+  /** 가계부 일별 합계 상태 — off: 토글 꺼짐(요청 안 함), loading: 현재 기간 응답 전 */
+  expensesStatus: 'off' | 'loading' | 'ready' | 'error'
   /** 레이어별 오류 문구 — 한 레이어가 실패해도 다른 레이어는 그대로 보인다 */
   errors: string[]
 }
@@ -112,6 +114,7 @@ export default function useCalendarOverlays(
       specialDays: groupByDate(sd?.data ?? []),
       expenses: new Map((ex?.data ?? []).map((d) => [d.date, d])),
       jobApplications: ja?.data ?? [],
+      expensesStatus: !showExpenses ? 'off' : !ex ? 'loading' : ex.error ? 'error' : 'ready',
       errors: [sd?.error, ja?.error, ex?.error].filter((e): e is string => !!e),
     }
   }, [key, specialDays, expenses, jobApplications, showExpenses, showJobApplications])

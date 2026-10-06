@@ -3,6 +3,8 @@ import { CATEGORY_DEFAULT_COLORS } from '@/constants/eventCategory'
 import { Link } from 'react-router-dom'
 import { CALENDAR_LAYER_OPTIONS, type CalendarLayer, type CalendarLayers } from './calendarLayers'
 import { JOB_APPLICATION_COLOR } from './calendarUtils'
+import MoneySummaryPanel from './MoneySummaryPanel'
+import type { CalendarMoneySummary } from './useCalendarMoneySummary'
 
 /** 표시 항목 앞의 색 — 달력에 그려지는 색과 맞춘다 */
 const LAYER_COLORS: Record<CalendarLayer, string> = {
@@ -18,12 +20,14 @@ interface Props {
   layers: CalendarLayers
   onToggleLayer: (layer: CalendarLayer) => void
   onCreate: () => void
+  /** 가계부 요약 — 표시 항목에서 가계부를 끄면 넘기지 않아 패널도 숨긴다 */
+  moneySummary?: CalendarMoneySummary
   /** 메뉴 이동·만들기 후 서랍을 닫는 등 (데스크톱 사이드바에서는 없음) */
   onNavigate?: () => void
 }
 
-/** 캘린더 왼쪽 패널 — 만들기, 표시 항목, 메뉴, 로그아웃. 데스크톱은 고정 사이드바, 폰은 서랍 안에 같은 내용을 쓴다 */
-export default function CalendarSidebar({ layers, onToggleLayer, onCreate, onNavigate }: Props) {
+/** 캘린더 왼쪽 패널 — 만들기, 가계부 요약, 표시 항목, 메뉴, 로그아웃. 데스크톱은 고정 사이드바, 폰은 서랍 안에 같은 내용을 쓴다 */
+export default function CalendarSidebar({ layers, onToggleLayer, onCreate, moneySummary, onNavigate }: Props) {
   return (
     <div className="flex h-full flex-col gap-6 py-4 pr-3">
       <div className="pl-4">
@@ -41,6 +45,8 @@ export default function CalendarSidebar({ layers, onToggleLayer, onCreate, onNav
           만들기
         </button>
       </div>
+
+      {moneySummary && <MoneySummaryPanel summary={moneySummary} onNavigate={onNavigate} />}
 
       <section className="pl-4">
         <h2 className="mb-2 text-xs font-semibold text-gray-500">표시할 항목</h2>

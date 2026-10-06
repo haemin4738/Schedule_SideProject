@@ -4,7 +4,13 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CalendarPage from './CalendarPage'
 import { getEvent, getEventsInRange, type EventSummary } from '@/api/events'
-import { addDefaultExpenseCategories, createExpense, getDailySummary, getExpenseCategories } from '@/api/expenses'
+import {
+  addDefaultExpenseCategories,
+  createExpense,
+  getDailySummary,
+  getExpenseCategories,
+  getMonthlySummary,
+} from '@/api/expenses'
 import { createJobApplication, getJobApplicationsInRange, type JobApplicationSummary } from '@/api/jobApplications'
 import { getSpecialDays, type SpecialDay } from '@/api/specialDays'
 import { LAYERS_STORAGE_KEY } from '@/components/calendar/calendarLayers'
@@ -19,6 +25,7 @@ vi.mock('@/api/specialDays', () => ({ getSpecialDays: vi.fn() }))
 vi.mock('@/api/expenses', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/expenses')>()),
   getDailySummary: vi.fn(),
+  getMonthlySummary: vi.fn(),
   getExpenseCategories: vi.fn(),
   createExpense: vi.fn(),
   addDefaultExpenseCategories: vi.fn(),
@@ -34,6 +41,7 @@ const mockedRange = vi.mocked(getEventsInRange)
 const mockedGet = vi.mocked(getEvent)
 const mockedSpecialDays = vi.mocked(getSpecialDays)
 const mockedDaily = vi.mocked(getDailySummary)
+const mockedMonthly = vi.mocked(getMonthlySummary)
 const mockedJobs = vi.mocked(getJobApplicationsInRange)
 const mockedCategories = vi.mocked(getExpenseCategories)
 const mockedCreateExpense = vi.mocked(createExpense)
@@ -114,6 +122,9 @@ describe('CalendarPage', () => {
     localStorage.clear()
     mockedSpecialDays.mockResolvedValue(specialDaysRes([]))
     mockedDaily.mockResolvedValue(dailyRes([]))
+    mockedMonthly.mockResolvedValue({
+      data: { success: true, data: { from: '', to: '', totalIncome: 0, totalExpense: 0, net: 0, months: [] } },
+    } as never)
     mockedJobs.mockResolvedValue([])
     // 달력 기준일을 2026-09-30(수)으로 고정한다 (타이머는 실제로 둔다)
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -515,6 +526,73 @@ describe('CalendarPage', () => {
       expect(await screen.findByText(JOB_TITLE)).toBeInTheDocument()
       expect(await screen.findByText('팀 회의')).toBeInTheDocument()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('사이드바 가계부 요약', () => {
+    const panel = () => screen.getByRole('region', { name: '가계부 요약' })
+    const totals = (title: string) => within(panel()).getByRole('heading', { name: title }).parentElement!
+
+    it('render_monthView_showsMonthTotalsWithoutOffRangeDaysAndTodayByDefault', async () => {
+      mockedDaily.mockResolvedValue(
+        dailyRes([
+          { date: '2026-08-31', income: 0, expense: 999, net: -999 },
+          { date: '2026-09-05', income: 50000, expense: 12000, net: 38000 },
+          { date: '2026-09-30', income: 0, expense: 3000, net: -3000 },
+          { date: '2026-10-01', income: 0, expense: 777, net: -777 },
+        ]),
+      )
+      renderPage()
+
+      const month = totals('9월 전체')
+      await waitFor(() => expect(month).toHaveTextContent('수입50,000원지출15,000원합계35,000원'))
+      // 기본 선택일은 오늘(9/30)
+      expect(totals('9월 30일 (수)')).toHaveTextContent('수입0원지출3,000원합계-3,000원')
+      expect(within(panel()).getByRole('link', { name: '가계부 보기' })).toHaveAttribute('href', '/expenses?month=2026-09')
+      // 월간 보기는 일별 합계만으로 계산한다
+      expect(mockedMonthly).not.toHaveBeenCalled()
+    })
+
+    it('onView_week_usesMonthlySummaryForMonthTotals', async () => {
+      const user = userEvent.setup()
+      mockedMonthly.mockResolvedValue({
+        data: { success: true, data: { from: '2026-09', to: '2026-09', totalIncome: 1000, totalExpense: 2000, net: -1000, months: [] } },
+      } as never)
+      renderPage()
+
+      await user.click(within(screen.getByRole('group', { name: '보기 전환' })).getByRole('button', { name: '주' }))
+
+      await waitFor(() => expect(totals('9월 전체')).toHaveTextContent('수입1,000원지출2,000원합계-1,000원'))
+      expect(mockedMonthly).toHaveBeenCalledWith({ from: '2026-09', to: '2026-09' })
+    })
+
+    it('onNavigate_nextMonth_defaultsToFirstDayOfMonth', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await user.click(screen.getByRole('button', { name: '다음' }))
+
+      expect(within(panel()).getByRole('heading', { name: '10월 1일 (목)' })).toBeInTheDocument()
+      expect(within(panel()).getByRole('link', { name: '가계부 보기' })).toHaveAttribute('href', '/expenses?month=2026-10')
+    })
+
+    it('toggleLayer_expensesOff_hidesPanel', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      expect(panel()).toBeInTheDocument()
+
+      await user.click(layerButton('가계부'))
+
+      expect(screen.queryByRole('region', { name: '가계부 요약' })).not.toBeInTheDocument()
+    })
+
+    it('load_dailyFails_showsErrorInPanelAndKeepsCalendar', async () => {
+      mockedDaily.mockRejectedValue(new Error('Network Error'))
+      mockedRange.mockResolvedValue([summary()])
+      renderPage()
+
+      await waitFor(() => expect(within(panel()).getAllByText('불러오지 못했습니다.')).toHaveLength(2))
+      expect(await screen.findByText('팀 회의')).toBeInTheDocument()
     })
   })
 
