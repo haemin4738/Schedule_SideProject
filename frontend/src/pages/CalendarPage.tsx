@@ -74,19 +74,32 @@ const formats: Formats = {
   agendaDateFormat: 'M월 D일 (ddd)',
 }
 
-/** 시간 칸 하나의 길이(분) — react-big-calendar 기본 step */
+/** 시간 칸 하나의 길이(분). <Calendar step> 으로도 넘겨 isSingleCell 의 가정과 실제 칸 크기를 묶는다 */
 const SLOT_MINUTES = 30
-const DAY_MINUTES = 24 * 60
+/** 한 시간을 나누는 칸 수 — rbc 기본값(2)과 같게 명시해 SLOT_MINUTES 와 함께 화면을 고정한다 */
+const SLOTS_PER_HOUR = 2
 
 /**
- * 드래그(action 'select')가 칸 하나 안에서 끝났는지.
- * 월간 칸·종일 줄은 00:00 부터 하루 단위, 시간 칸은 SLOT_MINUTES 단위로 알려 온다
+ * 하루 단위 칸(월간 칸·주/일 보기 종일 줄)에서 온 선택인지.
+ * rbc 1.20 은 월간(Month.selectDates)·종일 줄(TimeGrid.handleSelectAllDaySlot) 모두 slots 에 고른 날의 00:00 을
+ * 하루에 하나씩 담고 end 를 마지막 날 + 1일 00:00 으로 알린다. 시간 칸(DayColumn._selectSlot)은 slots 에
+ * start 부터 end 까지(끝 포함) step 간격의 시각을 모두 담으므로, 00:00~24:00 을 통째로 끌어도 개수가 맞지 않는다
  */
-const isSingleCell = (slot: SlotInfo) => {
-  const minutes = dayjs(slot.end).diff(slot.start, 'minute')
-  const dayCells = dayjs(slot.start).isSame(dayjs(slot.start).startOf('day')) && minutes % DAY_MINUTES === 0
-  return minutes <= (dayCells ? DAY_MINUTES : SLOT_MINUTES)
+const isDayCellSlot = (slot: SlotInfo) => {
+  const start = dayjs(slot.start)
+  const end = dayjs(slot.end)
+  return (
+    slot.slots.length > 0 &&
+    slot.slots.every((d) => dayjs(d).isSame(dayjs(d).startOf('day'))) &&
+    start.isSame(start.startOf('day')) &&
+    end.isSame(end.startOf('day')) &&
+    end.diff(start, 'day') === slot.slots.length
+  )
 }
+
+/** 드래그(action 'select')가 칸 하나 안에서 끝났는지 — 하루 단위 칸이면 하루, 시간 칸이면 SLOT_MINUTES 한 칸 */
+const isSingleCell = (slot: SlotInfo) =>
+  isDayCellSlot(slot) ? slot.slots.length === 1 : dayjs(slot.end).diff(slot.start, 'minute') <= SLOT_MINUTES
 
 /** 새로 입력할 때는 입력 종류(일정·구직활동·가계부)를 탭으로 바꿀 수 있고, 고른 날짜는 그대로 쓴다 */
 type ModalState =
@@ -289,8 +302,8 @@ export default function CalendarPage() {
     } else {
       setSelectedDay(day)
     }
-    if (view === 'month') {
-      // 월간 보기에서 고른 날짜(들)는 종일 일정으로 만든다. slot.end 는 다음 날 00:00(배타)이다
+    if (view === 'month' || isDayCellSlot(slot)) {
+      // 월간 칸·주/일 보기 종일 줄에서 고른 날짜(들)는 종일 일정으로 만든다. slot.end 는 다음 날 00:00(배타)이다
       openCreate(slot.start, dayjs(slot.end).subtract(1, 'millisecond').toDate(), true)
     } else {
       openCreate(slot.start, slot.end, false)
@@ -434,6 +447,8 @@ export default function CalendarPage() {
                 messages={messages}
                 formats={formats}
                 selectable
+                step={SLOT_MINUTES}
+                timeslots={SLOTS_PER_HOUR}
                 popup
                 onSelectSlot={onSelectSlot}
                 onSelectEvent={onSelectEvent}

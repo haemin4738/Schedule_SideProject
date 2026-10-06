@@ -62,7 +62,7 @@ export default function MoneySummaryPanel({ summary, onNavigate }: Props) {
         />
       </div>
       {/* 첫 클릭은 선택만 하므로 두 번째 클릭에 입력 창이 열린다는 것을 짧게 알려 준다 */}
-      <p className="mt-1.5 text-[11px] text-gray-400">날짜를 한 번 더 누르면 바로 입력할 수 있어요</p>
+      <p className="mt-1.5 text-[11px] text-gray-500">날짜를 한 번 더 누르면 바로 입력할 수 있어요</p>
     </section>
   )
 }

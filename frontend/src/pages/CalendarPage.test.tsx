@@ -720,6 +720,194 @@ describe('CalendarPage', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     })
 
+    /**
+     * 주·일 보기 시간 칸 열(.rbc-day-slot)의 layout 을 흉내 낸다 — 열마다 가로 100px, 하루 1440px(1분 = 1px).
+     * rbc 는 열 높이에 대한 y 비율로 30분 칸을 고른다. 열이 자기 좌표를 차지하도록 elementFromPoint 도 바꾼다
+     */
+    const layoutTimeColumns = () => {
+      const columns = Array.from(document.querySelectorAll<HTMLElement>('.rbc-time-content .rbc-day-slot'))
+      columns.forEach((col, i) => {
+        col.getBoundingClientRect = () => ({ top: 0, left: i * 100, bottom: 1440, right: i * 100 + 100 }) as DOMRect
+        Object.defineProperty(col, 'offsetWidth', { configurable: true, value: 100 })
+        Object.defineProperty(col, 'offsetHeight', { configurable: true, value: 1440 })
+      })
+      return columns
+    }
+    /** 시간 칸 열(dayIndex)에서 minute(0~1439) 위치 — 칸 가운데를 누르도록 15분 내린다 */
+    const timePoint = (dayIndex: number, minute: number) => ({ clientX: dayIndex * 100 + 50, clientY: minute + 15, button: 0 })
+
+    /** 시간 칸 하나를 한 번 누른다 */
+    const clickTimeCell = (dayIndex: number, minute: number) => {
+      const col = layoutTimeColumns()[dayIndex]
+      document.elementFromPoint = () => col
+      act(() => {
+        fireEvent.mouseDown(col, timePoint(dayIndex, minute))
+        fireEvent.mouseUp(col, timePoint(dayIndex, minute))
+      })
+    }
+
+    /** 같은 시간 칸 열에서 fromMinute 칸부터 toMinute 칸까지 끈다 (첫 이동은 클릭 허용 범위 5px 를 넘겨 드래그로 만든다) */
+    const dragTimeCells = (dayIndex: number, fromMinute: number, toMinute: number) => {
+      const col = layoutTimeColumns()[dayIndex]
+      document.elementFromPoint = () => col
+      const from = timePoint(dayIndex, fromMinute)
+      act(() => {
+        fireEvent.mouseDown(col, from)
+      })
+      act(() => {
+        fireEvent.mouseMove(col, { ...from, clientY: from.clientY + 10 })
+      })
+      act(() => {
+        fireEvent.mouseMove(col, timePoint(dayIndex, toMinute))
+      })
+      act(() => {
+        fireEvent.mouseUp(col, timePoint(dayIndex, toMinute))
+      })
+    }
+
+    /** 주·일 보기 종일 줄(.rbc-allday-cell)의 layout 을 흉내 낸다 — 월간 주 행과 같은 방식(칸마다 100px) */
+    const allDayCells = () => {
+      const row = document.querySelector<HTMLElement>('.rbc-allday-cell .rbc-row-bg')!
+      row.getBoundingClientRect = () => ({ top: 0, left: 0, bottom: 40, right: 700 }) as DOMRect
+      Object.defineProperty(row, 'offsetWidth', { configurable: true, value: 700 })
+      Object.defineProperty(row, 'offsetHeight', { configurable: true, value: 40 })
+      return row.querySelectorAll<HTMLElement>('.rbc-day-bg')
+    }
+    const allDayPoint = (dayIndex: number) => ({ clientX: dayIndex * 100 + 50, clientY: 20, button: 0 })
+
+    const clickAllDayCell = (dayIndex: number) => {
+      const cell = allDayCells()[dayIndex]
+      document.elementFromPoint = () => cell
+      act(() => {
+        fireEvent.mouseDown(cell, allDayPoint(dayIndex))
+        fireEvent.mouseUp(cell, allDayPoint(dayIndex))
+      })
+    }
+
+    const dragAllDayCells = (fromDay: number, toDay: number) => {
+      const cells = allDayCells()
+      document.elementFromPoint = () => cells[fromDay]
+      act(() => {
+        fireEvent.mouseDown(cells[fromDay], allDayPoint(fromDay))
+      })
+      document.elementFromPoint = () => cells[toDay]
+      act(() => {
+        fireEvent.mouseMove(cells[fromDay], { ...allDayPoint(fromDay), clientX: fromDay * 100 + 60 })
+      })
+      act(() => {
+        fireEvent.mouseMove(cells[toDay], allDayPoint(toDay))
+      })
+      act(() => {
+        fireEvent.mouseUp(cells[toDay], allDayPoint(toDay))
+      })
+    }
+
+    // 주 보기(9/27 일 ~ 10/3 토)에서 열 1 = 9/28(월), 열 2 = 9/29(화)
+    it('onSelectSlot_weekTimeCellOtherDayThenSameDay_selectsFirstThenOpensTimedModalAtSecondCell', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await switchView(user, '주')
+
+      clickTimeCell(2, 14 * 60)
+
+      await waitFor(() => expect(within(panel()).getByRole('heading', { name: '9월 29일 (화)' })).toBeInTheDocument())
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      // 같은 날의 다른 시간 칸 — 처음 누른 14:00 이 아니라 두 번째로 누른 칸(15:30, 30분)으로 열린다
+      clickTimeCell(2, 15 * 60 + 30)
+
+      const dialog = await screen.findByRole('dialog', { name: '새 일정' })
+      expect(within(dialog).getByLabelText('종일')).not.toBeChecked()
+      expect(within(dialog).getByLabelText('시작', { exact: true })).toHaveValue('2026-09-29')
+      expect(within(dialog).getByLabelText('시작 시간')).toHaveValue('15:30')
+      expect(within(dialog).getByLabelText('종료 시간')).toHaveValue('16:00')
+    })
+
+    it('onSelectSlot_weekTimeDragWithinOneCell_selectsDayWithoutOpeningModal', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await switchView(user, '주')
+
+      // 9:00 칸 안에서만 조금 끈다 — 칸 하나는 클릭과 같게 선택만
+      dragTimeCells(1, 9 * 60, 9 * 60 + 10)
+
+      await waitFor(() => expect(within(panel()).getByRole('heading', { name: '9월 28일 (월)' })).toBeInTheDocument())
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('onSelectSlot_weekTimeDragAcrossCells_opensTimedModalImmediately', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await switchView(user, '주')
+
+      // 선택일(오늘 9/30)과 다른 9/28 의 9:00 ~ 10:30 칸까지 끈다 — 칸 2개 이상이므로 바로 창
+      dragTimeCells(1, 9 * 60, 10 * 60 + 30)
+
+      const dialog = await screen.findByRole('dialog', { name: '새 일정' })
+      expect(within(dialog).getByLabelText('종일')).not.toBeChecked()
+      expect(within(dialog).getByLabelText('시작', { exact: true })).toHaveValue('2026-09-28')
+      expect(within(dialog).getByLabelText('시작 시간')).toHaveValue('09:00')
+      expect(within(dialog).getByLabelText('종료 시간')).toHaveValue('11:00')
+      expect(within(panel()).getByRole('heading', { name: '9월 28일 (월)' })).toBeInTheDocument()
+    })
+
+    it('onSelectSlot_weekAllDayRowSecondClick_opensAllDayModal', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await switchView(user, '주')
+
+      clickAllDayCell(2)
+      await waitFor(() => expect(within(panel()).getByRole('heading', { name: '9월 29일 (화)' })).toBeInTheDocument())
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      clickAllDayCell(2)
+
+      // 종일 줄은 월간 칸처럼 종일 일정 창이 된다 (00:00 ~ 다음 날 00:00 시간 일정이 아니다)
+      const dialog = await screen.findByRole('dialog', { name: '새 일정' })
+      expect(within(dialog).getByLabelText('종일')).toBeChecked()
+      expect(within(dialog).getByLabelText('시작', { exact: true })).toHaveValue('2026-09-29')
+      expect(within(dialog).getByLabelText('종료', { exact: true })).toHaveValue('2026-09-29')
+      expect(within(dialog).queryByLabelText('시작 시간')).not.toBeInTheDocument()
+    })
+
+    it('onSelectSlot_weekAllDayRowDragAcrossDays_opensAllDayModalForRange', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      await switchView(user, '주')
+
+      dragAllDayCells(1, 3)
+
+      const dialog = await screen.findByRole('dialog', { name: '새 일정' })
+      expect(within(dialog).getByLabelText('종일')).toBeChecked()
+      expect(within(dialog).getByLabelText('시작', { exact: true })).toHaveValue('2026-09-28')
+      expect(within(dialog).getByLabelText('종료', { exact: true })).toHaveValue('2026-09-30')
+    })
+
+    it('onSelectSlot_dayAllDayRowClickOnShownDay_opensAllDayModal', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      // 일 보기는 오늘(9/30) 하루 — 기본 선택일이라 첫 클릭에 바로 열린다
+      await switchView(user, '일')
+
+      clickAllDayCell(0)
+
+      const dialog = await screen.findByRole('dialog', { name: '새 일정' })
+      expect(within(dialog).getByLabelText('종일')).toBeChecked()
+      expect(within(dialog).getByLabelText('시작', { exact: true })).toHaveValue('2026-09-30')
+      expect(within(dialog).getByLabelText('종료', { exact: true })).toHaveValue('2026-09-30')
+    })
+
+    it('onSelectSlot_monthDragWithinOneCell_selectsDayWithoutOpeningModal', async () => {
+      renderPage()
+      await waitFor(() => expect(mockedDaily).toHaveBeenCalledTimes(1))
+
+      // 9/16 칸 안에서만 끈 드래그(action 'select', 하루)는 클릭처럼 선택만 한다
+      dragMonthCells(2, 3, 3)
+
+      await waitFor(() => expect(within(panel()).getByRole('heading', { name: '9월 16일 (수)' })).toBeInTheDocument())
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
     it('onSelectSlot_dragAcrossDays_opensModalAndSelectsStartDay', async () => {
       renderPage()
       await waitFor(() => expect(mockedDaily).toHaveBeenCalledTimes(1))
