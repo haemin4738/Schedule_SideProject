@@ -1,5 +1,6 @@
 import client from './client'
 import type { ExpenseType } from '@/constants/expenseType'
+import type { PaymentMethod } from '@/constants/paymentMethod'
 import type { PageMeta } from './jobApplications'
 
 export type { PageMeta }
@@ -18,6 +19,8 @@ export interface ExpenseSummary {
   categoryId: number
   categoryName: string
   amount: number
+  /** 지출일 때만 값이 있을 수 있다 (수입은 항상 null) */
+  paymentMethod: PaymentMethod | null
   transactionDate: string
   description: string | null
 }
@@ -32,6 +35,8 @@ export interface ExpenseRequest {
   type: ExpenseType
   categoryId: number
   amount: number
+  /** INCOME 이면 반드시 null (아니면 400). PUT 은 전체 교체라 생략하면 null 로 저장된다 */
+  paymentMethod: PaymentMethod | null
   transactionDate: string
   description: string | null
   memo: string | null
